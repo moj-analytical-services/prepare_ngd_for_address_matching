@@ -209,3 +209,9 @@ Authentication: Header - key: OS_PROJECT_API_KEY
 
 - [uk_address_matcher](https://github.com/moj-analytical-services/uk_address_matcher) - Address matching library
 - [prepare_addressbase_for_address_matching](https://github.com/moj-analytical-services/prepare_addressbase_for_address_matching) - Companion repo for AddressBase Premium data
+
+## Time taken
+
+Assuming the raw .zip files are already downloaded, on a Macbook Pro M4:
+- Extracting: 2 mintes
+- Processing into output in 5 chunks: 14 minutes
