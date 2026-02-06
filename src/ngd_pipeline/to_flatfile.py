@@ -174,7 +174,15 @@ def _create_core_feature_view(
         -- English track
         SELECT
             CAST(uprn AS BIGINT) AS uprn,
-            CAST(fulladdress AS VARCHAR) AS address_concat,
+            -- Strip postcode from end of fulladdress (format: "..., POSTCODE")
+            CAST(
+              CASE
+                WHEN postcode IS NOT NULL AND fulladdress LIKE '%, ' || postcode
+                THEN RTRIM(SUBSTR(fulladdress, 1, LENGTH(fulladdress) - LENGTH(postcode)), ', ')
+                ELSE fulladdress
+              END AS VARCHAR
+            ) AS address_concat,
+            CAST(postcode AS VARCHAR) AS postcode,
             '{parquet_path.name}' AS filename,
             CAST(classificationcode AS VARCHAR) AS classificationcode,
             CAST(parentuprn AS BIGINT) AS parentuprn,
@@ -193,20 +201,27 @@ def _create_core_feature_view(
         SELECT
             CAST(uprn AS BIGINT) AS uprn,
             CAST(
-              COALESCE(
-                alternatelanguagefulladdress,
-                TRIM(BOTH ', ' FROM
+              CASE
+                -- For alternatelanguagefulladdress, strip postcode from end
+                WHEN alternatelanguagefulladdress IS NOT NULL AND postcode IS NOT NULL
+                     AND alternatelanguagefulladdress LIKE '%, ' || postcode
+                THEN RTRIM(SUBSTR(alternatelanguagefulladdress, 1,
+                     LENGTH(alternatelanguagefulladdress) - LENGTH(postcode)), ', ')
+                WHEN alternatelanguagefulladdress IS NOT NULL
+                THEN alternatelanguagefulladdress
+                -- For component-based address, exclude postcode
+                ELSE TRIM(BOTH ', ' FROM
                   COALESCE(alternatelanguagesubname || ', ', '') ||
                   COALESCE(alternatelanguagename || ', ', '') ||
                   COALESCE(alternatelanguagenumber || ', ', '') ||
                   COALESCE(alternatelanguagestreetname || ', ', '') ||
                   COALESCE(alternatelanguagelocality || ', ', '') ||
                   COALESCE(alternatelanguagetownname || ', ', '') ||
-                  COALESCE(alternatelanguageislandname || ', ', '') ||
-                  COALESCE(postcode, '')
+                  COALESCE(alternatelanguageislandname, '')
                 )
-              ) AS VARCHAR
+              END AS VARCHAR
             ) AS address_concat,
+            CAST(postcode AS VARCHAR) AS postcode,
             '{parquet_path.name}' AS filename,
             CAST(classificationcode AS VARCHAR) AS classificationcode,
             CAST(parentuprn AS BIGINT) AS parentuprn,
@@ -253,7 +268,15 @@ def _create_altadd_view(
         CREATE OR REPLACE TEMP VIEW {view_name} AS
         SELECT
             CAST(uprn AS BIGINT) AS uprn,
-            CAST(fulladdress AS VARCHAR) AS address_concat,
+            -- Strip postcode from end of fulladdress (format: "..., POSTCODE")
+            CAST(
+              CASE
+                WHEN postcode IS NOT NULL AND fulladdress LIKE '%, ' || postcode
+                THEN RTRIM(SUBSTR(fulladdress, 1, LENGTH(fulladdress) - LENGTH(postcode)), ', ')
+                ELSE fulladdress
+              END AS VARCHAR
+            ) AS address_concat,
+            CAST(postcode AS VARCHAR) AS postcode,
             '{parquet_path.name}' AS filename,
             CAST(NULL AS VARCHAR) AS classificationcode,
             CAST(NULL AS BIGINT) AS parentuprn,
@@ -307,9 +330,9 @@ def _create_royal_mail_view(
                 COALESCE(thoroughfare     || ', ', '') ||
                 COALESCE(doubledependentlocality || ', ', '') ||
                 COALESCE(dependentlocality || ', ', '') ||
-                COALESCE(posttown || ', ', '') ||
-                COALESCE(postcode, '')
+                COALESCE(posttown, '')
             ) AS address_concat,
+            CAST(postcode AS VARCHAR) AS postcode,
             '{parquet_path.name}' AS filename,
             CAST(NULL AS VARCHAR) AS classificationcode,
             CAST(NULL AS BIGINT) AS parentuprn,
@@ -337,9 +360,9 @@ def _create_royal_mail_view(
                 COALESCE(welshthoroughfare     || ', ', '') ||
                 COALESCE(welshdoubledependentlocality || ', ', '') ||
                 COALESCE(welshdependentlocality || ', ', '') ||
-                COALESCE(welshposttown || ', ', '') ||
-                COALESCE(postcode, '')
+                COALESCE(welshposttown, '')
             ) AS address_concat,
+            CAST(postcode AS VARCHAR) AS postcode,
             '{parquet_path.name}' AS filename,
             CAST(NULL AS VARCHAR) AS classificationcode,
             CAST(NULL AS BIGINT) AS parentuprn,
@@ -374,6 +397,7 @@ def _enrich_with_metadata(con: duckdb.DuckDBPyConnection) -> None:
         SELECT
             a.uprn,
             a.address_concat,
+            a.postcode,
             a.filename,
             COALESCE(a.classificationcode, m.classificationcode) AS classificationcode,
             COALESCE(a.parentuprn, m.parentuprn) AS parentuprn,
@@ -444,6 +468,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
         SELECT
           uprn,
           address_concat,
+          postcode,
           filename,
           classificationcode,
           parentuprn,

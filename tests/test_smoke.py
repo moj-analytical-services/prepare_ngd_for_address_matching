@@ -179,6 +179,7 @@ def test_flatfile_single_chunk(temp_settings: Settings) -> None:
     expected_columns = [
         "uprn",
         "address_concat",
+        "postcode",
         "filename",
         "classificationcode",
         "parentuprn",
