@@ -115,7 +115,8 @@ Each file contains:
 | Column | Type | Description |
 |--------|------|-------------|
 | `uprn` | BIGINT | Unique Property Reference Number |
-| `address_concat` | VARCHAR | Complete address string including postcode |
+| `address_concat` | VARCHAR | Address string without postcode |
+| `postcode` | VARCHAR | UK postcode |
 | `filename` | VARCHAR | Source file name (e.g., `add_gb_builtaddress.parquet`) |
 | `classificationcode` | VARCHAR | Property classification code (e.g., RD06 for residential) |
 | `parentuprn` | BIGINT | Parent UPRN for hierarchical addresses |
@@ -128,12 +129,12 @@ Each file contains:
 Example rows:
 
 ```
-┌───────────┬─────────────────────────────────────────────────────────┬─────────────────────────────────┬────────────────────┬────────────┬───────────┬────────────────┬────────────┐
-│   uprn    │                      address_concat                     │            filename             │ classificationcode │ parentuprn │ rootuprn  │ hierarchylevel │ floorlevel │
-├───────────┼─────────────────────────────────────────────────────────┼─────────────────────────────────┼────────────────────┼────────────┼───────────┼────────────────┼────────────┤
-│   6001491 │ 7, LARK ROW, LONDON, E2 9JA                             │ add_gb_builtaddress.parquet     │ RD06               │       NULL │   6001491 │              1 │ NULL       │
-│   6004118 │ FLAT 9, BENSON HOUSE, LIGONIER STREET, LONDON, E2 7HH   │ add_gb_builtaddress.parquet     │ RD06               │    6130169 │   6130169 │              2 │ 4          │
-└───────────┴─────────────────────────────────────────────────────────┴─────────────────────────────────┴────────────────────┴────────────┴───────────┴────────────────┴────────────┘
+┌───────────┬─────────────────────────────────────────────────────┬──────────┬─────────────────────────────────┬────────────────────┬────────────┬───────────┬────────────────┬────────────┐
+│   uprn    │                    address_concat                   │ postcode │            filename             │ classificationcode │ parentuprn │ rootuprn  │ hierarchylevel │ floorlevel │
+├───────────┼─────────────────────────────────────────────────────┼──────────┼─────────────────────────────────┼────────────────────┼────────────┼───────────┼────────────────┼────────────┤
+│   6001491 │ 7, LARK ROW, LONDON                                 │ E2 9JA   │ add_gb_builtaddress.parquet     │ RD06               │       NULL │   6001491 │              1 │ NULL       │
+│   6004118 │ FLAT 9, BENSON HOUSE, LIGONIER STREET, LONDON       │ E2 7HH   │ add_gb_builtaddress.parquet     │ RD06               │    6130169 │   6130169 │              2 │ 4          │
+└───────────┴─────────────────────────────────────────────────────┴──────────┴─────────────────────────────────┴────────────────────┴────────────┴───────────┴────────────────┴────────────┘
 ```
 
 Metadata columns (`classificationcode`, `parentuprn`, `rootuprn`, `hierarchylevel`, `floorlevel`, `lowestfloorlevel`, `highestfloorlevel`) are enriched via UPRN lookup from core address files. This means Royal Mail addresses and alternate address records receive metadata from their corresponding Built/Historic/Pre-Build address records.
