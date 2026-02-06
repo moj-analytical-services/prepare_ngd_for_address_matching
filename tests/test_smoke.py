@@ -178,11 +178,15 @@ def test_flatfile_single_chunk(temp_settings: Settings) -> None:
 
     expected_columns = [
         "uprn",
-        "full_address_with_postcode",
+        "address_concat",
         "filename",
-        "feature_type",
-        "address_status",
-        "language",
+        "classificationcode",
+        "parentuprn",
+        "rootuprn",
+        "hierarchylevel",
+        "floorlevel",
+        "lowestfloorlevel",
+        "highestfloorlevel",
     ]
     for col in expected_columns:
         assert col in column_names, f"Column {col} should exist in output"
@@ -220,27 +224,6 @@ def test_flatfile_idempotent(temp_settings: Settings) -> None:
     assert output1[0].name == output2[0].name
 
 
-def test_welsh_language_extraction(temp_settings: Settings) -> None:
-    """Test that Welsh language addresses are extracted."""
-    # Prepare test data
-    _prepare_test_parquet(temp_settings)
-
-    # Run flatfile step
-    output_files = run_flatfile_step(temp_settings, force=True)
-
-    # Check for Welsh records
-    con = duckdb.connect()
-    result = con.execute(f"""
-        SELECT COUNT(*) FROM read_parquet('{output_files[0].as_posix()}')
-        WHERE language = 'cym'
-    """).fetchone()
-
-    # Note: Welsh extraction depends on sample data having Welsh variants
-    # This test verifies the pipeline doesn't error on Welsh processing
-    assert result is not None
-    con.close()
-
-
 def test_deduplication(temp_settings: Settings) -> None:
     """Test that deduplication removes duplicate UPRN+address combinations."""
     # Prepare test data
@@ -252,9 +235,9 @@ def test_deduplication(temp_settings: Settings) -> None:
     # Verify no exact duplicates
     con = duckdb.connect()
     result = con.execute(f"""
-        SELECT uprn, full_address_with_postcode, COUNT(*) as cnt
+        SELECT uprn, address_concat, COUNT(*) as cnt
         FROM read_parquet('{output_files[0].as_posix()}')
-        GROUP BY uprn, full_address_with_postcode
+        GROUP BY uprn, address_concat
         HAVING COUNT(*) > 1
     """).fetchall()
 

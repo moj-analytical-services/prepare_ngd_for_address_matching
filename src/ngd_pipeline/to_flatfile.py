@@ -55,6 +55,103 @@ ALTADD_STEMS = {
     "add_gb_prebuildaddress_altadd",
 }
 
+# Priority order for metadata lookup (lower = higher priority)
+CORE_FEATURE_PRIORITY = {
+    "add_gb_builtaddress": 1,
+    "add_gb_prebuildaddress": 2,
+    "add_gb_nonaddressableobject": 3,
+    "add_gb_historicaddress": 4,
+}
+
+
+def _create_metadata_lookup_view(
+    con: duckdb.DuckDBPyConnection,
+    parquet_dir: Path,
+    uprn_predicate: str | None = None,
+) -> None:
+    """Create a lookup view with metadata from all core feature files.
+
+    This view is used to enrich Royal Mail and alternate address records
+    with metadata (classificationcode, parentuprn, etc.) by UPRN lookup.
+
+    Uses priority ranking (Built > Pre-Build > Non-Addressable > Historic)
+    to dedupe when a UPRN exists in multiple core files.
+
+    Args:
+        con: DuckDB connection.
+        parquet_dir: Directory containing parquet files.
+        uprn_predicate: Optional predicate for hash-based chunking.
+    """
+    where_clause = f"WHERE {uprn_predicate}" if uprn_predicate else ""
+
+    # Build UNION ALL of all core files that exist
+    union_parts = []
+    for stem, priority in sorted(CORE_FEATURE_PRIORITY.items(), key=lambda x: x[1]):
+        parquet_path = parquet_dir / f"{stem}.parquet"
+        if parquet_path.exists():
+            union_parts.append(f"""
+                SELECT
+                    CAST(uprn AS BIGINT) AS uprn,
+                    CAST(classificationcode AS VARCHAR) AS classificationcode,
+                    CAST(parentuprn AS BIGINT) AS parentuprn,
+                    CAST(rootuprn AS BIGINT) AS rootuprn,
+                    CAST(hierarchylevel AS INTEGER) AS hierarchylevel,
+                    CAST(floorlevel AS VARCHAR) AS floorlevel,
+                    CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
+                    CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+                    {priority} AS source_priority
+                FROM read_parquet('{parquet_path.as_posix()}')
+                {where_clause}
+            """)
+
+    if not union_parts:
+        # No core files found - create empty lookup
+        logger.warning("No core feature files found. Metadata lookup will be empty.")
+        con.execute("""
+            CREATE OR REPLACE TEMP VIEW uprn_metadata_lookup AS
+            SELECT
+                CAST(NULL AS BIGINT) AS uprn,
+                CAST(NULL AS VARCHAR) AS classificationcode,
+                CAST(NULL AS BIGINT) AS parentuprn,
+                CAST(NULL AS BIGINT) AS rootuprn,
+                CAST(NULL AS INTEGER) AS hierarchylevel,
+                CAST(NULL AS VARCHAR) AS floorlevel,
+                CAST(NULL AS DOUBLE) AS lowestfloorlevel,
+                CAST(NULL AS DOUBLE) AS highestfloorlevel
+            WHERE 1=0
+        """)
+        return
+
+    union_sql = "\nUNION ALL\n".join(union_parts)
+
+    sql = f"""
+        CREATE OR REPLACE TEMP VIEW uprn_metadata_lookup AS
+        WITH core_data AS (
+            {union_sql}
+        ),
+        ranked AS (
+            SELECT
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY uprn
+                    ORDER BY source_priority
+                ) AS rn
+            FROM core_data
+        )
+        SELECT
+            uprn,
+            classificationcode,
+            parentuprn,
+            rootuprn,
+            hierarchylevel,
+            floorlevel,
+            lowestfloorlevel,
+            highestfloorlevel
+        FROM ranked
+        WHERE rn = 1;
+    """
+    con.execute(sql)
+
 
 def _create_core_feature_view(
     con: duckdb.DuckDBPyConnection,
@@ -77,15 +174,19 @@ def _create_core_feature_view(
         -- English track
         SELECT
             CAST(uprn AS BIGINT) AS uprn,
-            CAST(fulladdress AS VARCHAR) AS full_address_with_postcode,
+            CAST(fulladdress AS VARCHAR) AS address_concat,
             '{parquet_path.name}' AS filename,
+            CAST(classificationcode AS VARCHAR) AS classificationcode,
+            CAST(parentuprn AS BIGINT) AS parentuprn,
+            CAST(rootuprn AS BIGINT) AS rootuprn,
+            CAST(hierarchylevel AS INTEGER) AS hierarchylevel,
+            CAST(floorlevel AS VARCHAR) AS floorlevel,
+            CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
+            CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            -- Internal columns for deduplication (not in final output)
             CAST(description AS VARCHAR) AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
-            CAST(buildstatus AS VARCHAR) AS build_status,
-            CAST(postcodesource AS VARCHAR) AS postcodesource,
-            CAST(classificationcode AS VARCHAR) AS classification_code,
-            CAST(NULL AS VARCHAR) AS matched_address_feature_type,
-            'eng' AS language
+            CAST(buildstatus AS VARCHAR) AS build_status
         FROM src
         UNION ALL
         -- Welsh (if present) track
@@ -105,15 +206,19 @@ def _create_core_feature_view(
                   COALESCE(postcode, '')
                 )
               ) AS VARCHAR
-            ) AS full_address_with_postcode,
+            ) AS address_concat,
             '{parquet_path.name}' AS filename,
+            CAST(classificationcode AS VARCHAR) AS classificationcode,
+            CAST(parentuprn AS BIGINT) AS parentuprn,
+            CAST(rootuprn AS BIGINT) AS rootuprn,
+            CAST(hierarchylevel AS INTEGER) AS hierarchylevel,
+            CAST(floorlevel AS VARCHAR) AS floorlevel,
+            CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
+            CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            -- Internal columns for deduplication (not in final output)
             CAST(description AS VARCHAR) AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
-            CAST(buildstatus AS VARCHAR) AS build_status,
-            CAST(postcodesource AS VARCHAR) AS postcodesource,
-            CAST(classificationcode AS VARCHAR) AS classification_code,
-            CAST(NULL AS VARCHAR) AS matched_address_feature_type,
-            'cym' AS language
+            CAST(buildstatus AS VARCHAR) AS build_status
         FROM src
         WHERE lower(coalesce(alternatelanguage,'')) IN ('wel','cym','welsh','cymraeg')
           AND (
@@ -140,26 +245,29 @@ def _create_altadd_view(
     """Create view for alternate address records.
 
     These tables have fewer fields - no classification columns.
+    Metadata columns (classificationcode, parentuprn, etc.) are NULL here
+    and will be enriched via UPRN lookup from core files.
     """
     where_clause = f"WHERE {uprn_predicate}" if uprn_predicate else ""
     sql = f"""
         CREATE OR REPLACE TEMP VIEW {view_name} AS
         SELECT
             CAST(uprn AS BIGINT) AS uprn,
-            CAST(fulladdress AS VARCHAR) AS full_address_with_postcode,
+            CAST(fulladdress AS VARCHAR) AS address_concat,
             '{parquet_path.name}' AS filename,
+            CAST(NULL AS VARCHAR) AS classificationcode,
+            CAST(NULL AS BIGINT) AS parentuprn,
+            CAST(NULL AS BIGINT) AS rootuprn,
+            CAST(NULL AS INTEGER) AS hierarchylevel,
+            CAST(floorlevel AS VARCHAR) AS floorlevel,
+            CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
+            CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            -- Internal columns for deduplication (not in final output)
             '{feature_type}' AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
-            CAST(NULL AS VARCHAR) AS build_status,
-            CAST(NULL AS VARCHAR) AS postcodesource,
-            CAST(NULL AS VARCHAR) AS classification_code,
-            CAST(NULL AS VARCHAR) AS matched_address_feature_type,
-            CASE
-              WHEN lower(coalesce(language,'')) IN ('cym','wel','welsh','cymraeg') THEN 'cym'
-              ELSE 'eng'
-            END AS language
-                FROM read_parquet('{parquet_path.as_posix()}')
-                {where_clause};
+            CAST(NULL AS VARCHAR) AS build_status
+        FROM read_parquet('{parquet_path.as_posix()}')
+        {where_clause};
     """
     con.execute(sql)
 
@@ -174,6 +282,7 @@ def _create_royal_mail_view(
 
     Builds address from component fields. Produces both English and Welsh variants.
     Excludes records where matchedaddressfeaturetype is 'Non-Addressable Object'.
+    All metadata columns are NULL here and will be enriched via UPRN lookup.
     """
     conditions = ["matchedaddressfeaturetype != 'Non-Addressable Object'"]
     if uprn_predicate:
@@ -200,15 +309,19 @@ def _create_royal_mail_view(
                 COALESCE(dependentlocality || ', ', '') ||
                 COALESCE(posttown || ', ', '') ||
                 COALESCE(postcode, '')
-            ) AS full_address_with_postcode,
+            ) AS address_concat,
             '{parquet_path.name}' AS filename,
+            CAST(NULL AS VARCHAR) AS classificationcode,
+            CAST(NULL AS BIGINT) AS parentuprn,
+            CAST(NULL AS BIGINT) AS rootuprn,
+            CAST(NULL AS INTEGER) AS hierarchylevel,
+            CAST(NULL AS VARCHAR) AS floorlevel,
+            CAST(NULL AS DOUBLE) AS lowestfloorlevel,
+            CAST(NULL AS DOUBLE) AS highestfloorlevel,
+            -- Internal columns for deduplication (not in final output)
             'Royal Mail Address' AS feature_type,
             CAST(NULL AS VARCHAR) AS address_status,
-            CAST(NULL AS VARCHAR) AS build_status,
-            CAST(NULL AS VARCHAR) AS postcodesource,
-            CAST(NULL AS VARCHAR) AS classification_code,
-            CAST(matchedaddressfeaturetype AS VARCHAR) AS matched_address_feature_type,
-            'eng' AS language
+            CAST(NULL AS VARCHAR) AS build_status
         FROM src
         UNION ALL
         -- Welsh
@@ -226,21 +339,55 @@ def _create_royal_mail_view(
                 COALESCE(welshdependentlocality || ', ', '') ||
                 COALESCE(welshposttown || ', ', '') ||
                 COALESCE(postcode, '')
-            ) AS full_address_with_postcode,
+            ) AS address_concat,
             '{parquet_path.name}' AS filename,
+            CAST(NULL AS VARCHAR) AS classificationcode,
+            CAST(NULL AS BIGINT) AS parentuprn,
+            CAST(NULL AS BIGINT) AS rootuprn,
+            CAST(NULL AS INTEGER) AS hierarchylevel,
+            CAST(NULL AS VARCHAR) AS floorlevel,
+            CAST(NULL AS DOUBLE) AS lowestfloorlevel,
+            CAST(NULL AS DOUBLE) AS highestfloorlevel,
+            -- Internal columns for deduplication (not in final output)
             'Royal Mail Address' AS feature_type,
             CAST(NULL AS VARCHAR) AS address_status,
-            CAST(NULL AS VARCHAR) AS build_status,
-            CAST(NULL AS VARCHAR) AS postcodesource,
-            CAST(NULL AS VARCHAR) AS classification_code,
-            CAST(matchedaddressfeaturetype AS VARCHAR) AS matched_address_feature_type,
-            'cym' AS language
+            CAST(NULL AS VARCHAR) AS build_status
         FROM src
         WHERE welshdependentthoroughfare IS NOT NULL
            OR welshthoroughfare IS NOT NULL
            OR welshdoubledependentlocality IS NOT NULL
            OR welshdependentlocality IS NOT NULL
            OR welshposttown IS NOT NULL;
+    """
+    con.execute(sql)
+
+
+def _enrich_with_metadata(con: duckdb.DuckDBPyConnection) -> None:
+    """Enrich all_full_addresses with metadata from core files.
+
+    Uses COALESCE to preserve existing values (from core files)
+    and fill in NULLs (from altadd and Royal Mail files) via
+    the uprn_metadata_lookup table.
+    """
+    sql = """
+        CREATE OR REPLACE TABLE all_full_addresses_enriched AS
+        SELECT
+            a.uprn,
+            a.address_concat,
+            a.filename,
+            COALESCE(a.classificationcode, m.classificationcode) AS classificationcode,
+            COALESCE(a.parentuprn, m.parentuprn) AS parentuprn,
+            COALESCE(a.rootuprn, m.rootuprn) AS rootuprn,
+            COALESCE(a.hierarchylevel, m.hierarchylevel) AS hierarchylevel,
+            COALESCE(a.floorlevel, m.floorlevel) AS floorlevel,
+            COALESCE(a.lowestfloorlevel, m.lowestfloorlevel) AS lowestfloorlevel,
+            COALESCE(a.highestfloorlevel, m.highestfloorlevel) AS highestfloorlevel,
+            -- Internal columns for deduplication
+            a.feature_type,
+            a.address_status,
+            a.build_status
+        FROM all_full_addresses a
+        LEFT JOIN uprn_metadata_lookup m ON a.uprn = m.uprn;
     """
     con.execute(sql)
 
@@ -254,6 +401,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
     - Build status: Built Complete -> Under Construction -> Prebuild -> Historic -> Demolished
 
     Excludes Non-Addressable Objects from output.
+    Selects only target output columns (drops internal ranking columns).
     """
     dedup_sql = """
         CREATE OR REPLACE TEMP VIEW all_full_addresses_dedup AS
@@ -284,26 +432,26 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
               ELSE 5
             END AS build_status_rank,
             ROW_NUMBER() OVER (
-              PARTITION BY uprn, full_address_with_postcode
+              PARTITION BY uprn, address_concat
               ORDER BY
                 feature_type_rank,
                 address_status_rank,
                 build_status_rank
             ) AS rn
-          FROM all_full_addresses
+          FROM all_full_addresses_enriched
           WHERE feature_type != 'Non-Addressable Object'
         )
         SELECT
           uprn,
-          full_address_with_postcode,
+          address_concat,
           filename,
-          feature_type,
-          address_status,
-          build_status,
-          postcodesource,
-          classification_code,
-          matched_address_feature_type,
-          language
+          classificationcode,
+          parentuprn,
+          rootuprn,
+          hierarchylevel,
+          floorlevel,
+          lowestfloorlevel,
+          highestfloorlevel
         FROM ranked
         WHERE rn = 1;
     """
@@ -424,6 +572,10 @@ def run_flatfile_step(settings: Settings, force: bool = False) -> list[Path]:
         if uprn_predicate:
             logger.info("Applying chunk predicate: %s", uprn_predicate)
 
+        # Create metadata lookup view (for enriching Royal Mail and altadd records)
+        logger.debug("Creating metadata lookup view...")
+        _create_metadata_lookup_view(con, parquet_dir, uprn_predicate)
+
         created_views: list[str] = []
 
         for path in sorted(parquet_files):
@@ -462,6 +614,10 @@ def run_flatfile_step(settings: Settings, force: bool = False) -> list[Path]:
             CREATE OR REPLACE TABLE all_full_addresses AS
             {union_sql};
         """)
+
+        # Enrich with metadata from lookup table
+        logger.info("Enriching addresses with metadata from core files...")
+        _enrich_with_metadata(con)
 
         # Create deduplicated view
         logger.info("Creating deduplicated view...")
