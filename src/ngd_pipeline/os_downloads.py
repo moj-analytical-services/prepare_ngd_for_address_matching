@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 # OS Data Hub API base URL
 API_BASE_URL = "https://api.os.uk/downloads/v1"
 
+# Download tuning defaults
+DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+
 
 @dataclass
 class DownloadItem:
@@ -156,6 +159,8 @@ def download_file(
     api_key: str,
     expected_md5: str | None = None,
     force: bool = False,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    session: requests.Session | None = None,
 ) -> bool:
     """Download a file with streaming and checksum verification.
 
@@ -196,23 +201,27 @@ def download_file(
 
     logger.info("Downloading %s...", dest_path.name)
 
-    response = requests.get(download_url, stream=True, timeout=30)
-    response.raise_for_status()
+    sess = session or requests.Session()
+    response = sess.get(download_url, stream=True, timeout=(30, 300))
+    try:
+        response.raise_for_status()
 
-    # Get content length for progress
-    total_size = int(response.headers.get("content-length", 0))
-    downloaded = 0
+        # Get content length for progress
+        total_size = int(response.headers.get("content-length", 0))
+        downloaded = 0
+        next_log = 10 * 1024 * 1024
 
-    md5_hash = hashlib.md5()
-    with open(part_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
+        md5_hash = hashlib.md5() if expected_md5 else None
+        with open(part_path, "wb", buffering=chunk_size) as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if not chunk:
+                    continue
                 f.write(chunk)
-                md5_hash.update(chunk)
+                if md5_hash:
+                    md5_hash.update(chunk)
                 downloaded += len(chunk)
 
-                # Log progress every 10MB
-                if total_size and downloaded % (10 * 1024 * 1024) < 8192:
+                if total_size and downloaded >= next_log:
                     pct = 100 * downloaded / total_size
                     logger.info(
                         "  Progress: %d/%d MB (%.1f%%)",
@@ -220,12 +229,15 @@ def download_file(
                         total_size // (1024 * 1024),
                         pct,
                     )
+                    next_log += 10 * 1024 * 1024
+    finally:
+        response.close()
 
     # Verify MD5 if expected
     if expected_md5:
-        actual_md5 = md5_hash.hexdigest()
+        actual_md5 = md5_hash.hexdigest()  # type: ignore[union-attr]
         if actual_md5 != expected_md5:
-            part_path.unlink()
+            part_path.unlink(missing_ok=True)
             raise ValueError(
                 f"MD5 mismatch for {dest_path.name}: expected {expected_md5}, got {actual_md5}"
             )
