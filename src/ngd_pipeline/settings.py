@@ -35,6 +35,7 @@ class OSDownloadSettings:
     package_id: str
     version_id: str
     api_key: str
+    api_secret: str
 
 
 @dataclass
@@ -83,20 +84,30 @@ def _load_yaml(config_path: Path) -> dict[str, Any]:
     return config
 
 
-def _validate_env_vars() -> str:
+def _validate_env_vars() -> tuple[str, str]:
     """Validate required environment variables exist."""
     api_key = os.environ.get("OS_PROJECT_API_KEY")
+    api_secret = os.environ.get("OS_PROJECT_API_SECRET")
 
     if not api_key:
         raise SettingsError(
             "OS_PROJECT_API_KEY not found in environment. "
             "Create a .env file with OS_PROJECT_API_KEY=<your-key>"
         )
+    if not api_secret:
+        raise SettingsError(
+            "OS_PROJECT_API_SECRET not found in environment. "
+            "Create a .env file with OS_PROJECT_API_SECRET=<your-secret>"
+        )
 
-    return api_key
+    return api_key, api_secret
 
 
-def load_settings(config_path: str | Path, load_env: bool = True) -> Settings:
+def load_settings(
+    config_path: str | Path,
+    load_env: bool = True,
+    env_path: str | Path | None = None,
+) -> Settings:
     """Load settings from YAML config file and environment variables.
 
     Args:
@@ -115,16 +126,16 @@ def load_settings(config_path: str | Path, load_env: bool = True) -> Settings:
 
     # Load .env file from the same directory as config
     if load_env:
-        env_path = base_dir / ".env"
-        load_dotenv(env_path)
-        if env_path.exists():
-            logger.debug("Loaded environment from %s", env_path)
+        env_file = Path(env_path).resolve() if env_path else (base_dir / ".env")
+        load_dotenv(env_file)
+        if env_file.exists():
+            logger.debug("Loaded environment from %s", env_file)
 
     # Load YAML config
     config = _load_yaml(config_path)
 
     # Validate environment variables
-    api_key = _validate_env_vars()
+    api_key, api_secret = _validate_env_vars()
 
     # Build path settings
     paths_config = config.get("paths", {})
@@ -145,6 +156,7 @@ def load_settings(config_path: str | Path, load_env: bool = True) -> Settings:
         package_id=os_config.get("package_id", "16331"),
         version_id=os_config.get("version_id", "103792"),
         api_key=api_key,
+        api_secret=api_secret,
     )
 
     # Build processing settings
