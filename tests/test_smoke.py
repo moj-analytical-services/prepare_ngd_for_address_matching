@@ -54,6 +54,7 @@ def temp_settings() -> Generator[Settings, None, None]:
             package_id="test",
             version_id="test",
             api_key="test",
+            api_secret="test",
         )
 
         processing = ProcessingSettings(
@@ -97,6 +98,7 @@ def temp_settings_chunked() -> Generator[Settings, None, None]:
             package_id="test",
             version_id="test",
             api_key="test",
+            api_secret="test",
         )
 
         processing = ProcessingSettings(
