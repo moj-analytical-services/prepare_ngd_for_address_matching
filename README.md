@@ -12,24 +12,54 @@ Transform OS NGD (National Geographic Database) address data into parquet output
   - `OS_PROJECT_API_KEY`
   - `OS_PROJECT_API_SECRET`
 
-## Quick start
+## Install from PyPI
 
 ```bash
-git clone https://github.com/moj-analytical-services/prepare_ngd_for_address_matching.git
-cd prepare_ngd_for_address_matching
-uv sync
-cp .env.example .env
+pip install ukam-ngd-pipeline
 ```
 
-### 1) Generate config with the setup wizard
+Or with `uv`:
 
 ```bash
-uv run ukam-ngd-setup --config-out config.yaml
+uv tool install ukam-ngd-pipeline
+```
+
+## Run without installing (uvx)
+
+You can run commands directly from PyPI without a permanent install:
+
+```bash
+uvx --from ukam-ngd-pipeline ukam-ngd-setup --help
+uvx --from ukam-ngd-pipeline ukam-ngd-build --help
+```
+
+Example full run:
+
+```bash
+uvx --from ukam-ngd-pipeline ukam-ngd-setup --config-out config.yaml
+uvx --from ukam-ngd-pipeline ukam-ngd-build --config config.yaml --step all
+```
+
+After installation, CLI commands are available directly:
+
+```bash
+ukam-ngd-setup --help
+ukam-ngd-build --help
+```
+
+## Quick start
+
+### Workflow 1: CLI
+
+1) Generate config with the setup wizard
+
+```bash
+ukam-ngd-setup --config-out config.yaml
 ```
 
 This writes `config.yaml` and, by default, `.env` placeholders if `.env` does not already exist.
 
-### 2) Add real credentials
+2) Add real credentials
 
 Edit `.env`:
 
@@ -38,10 +68,25 @@ OS_PROJECT_API_KEY=your_api_key_here
 OS_PROJECT_API_SECRET=your_api_secret_here
 ```
 
-### 3) Run the full pipeline
+3) Run the full pipeline
 
 ```bash
-uv run ukam-ngd-build --config config.yaml --step all
+ukam-ngd-build --config config.yaml --step all
+```
+
+### Workflow 2: Python functions
+
+```python
+from ngd_pipeline import create_config_and_env, run_from_config
+
+create_config_and_env(
+  config_out="config.yaml",
+  env_out=".env",
+  package_id="16331",
+  version_id="104444",
+)
+
+run_from_config(config_path="config.yaml", step="all")
 ```
 
 <details>
@@ -70,20 +115,20 @@ Set `os_downloads.package_id` and `os_downloads.version_id`, then adjust `paths`
 ### Example A: guided setup then full run
 
 ```bash
-uv run ukam-ngd-setup --config-out config.yaml
-uv run ukam-ngd-build --config config.yaml --step all
+ukam-ngd-setup --config-out config.yaml
+ukam-ngd-build --config config.yaml --step all
 ```
 
 ### Example B: non-interactive setup and tuned full run
 
 ```bash
-uv run ukam-ngd-setup \
+ukam-ngd-setup \
   --non-interactive \
   --package-id 16331 \
   --version-id <version_id> \
   --config-out config.yaml
 
-uv run ukam-ngd-build \
+ukam-ngd-build \
   --config config.yaml \
   --step all \
   --num-chunks 20 \
@@ -178,8 +223,8 @@ To run the pipeline from a manual download:
 2. Run the pipeline starting from extract:
 
 ```bash
-uv run ukam-ngd-build --config config.yaml --step extract
-uv run ukam-ngd-build --config config.yaml --step flatfile
+ukam-ngd-build --config config.yaml --step extract
+ukam-ngd-build --config config.yaml --step flatfile
 ```
 
 ## OS Downloads API
@@ -233,7 +278,7 @@ processing:
 ## Smoke test
 
 ```bash
-uv run pytest tests/test_smoke.py
+pytest tests/test_smoke.py
 ```
 
 ## Related projects
