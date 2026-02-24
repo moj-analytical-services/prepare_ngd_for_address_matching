@@ -13,6 +13,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
 
+    # Set up such that PyPI Trusted Publishing (OIDC) can work.
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+
     steps:
       - name: Check out code
         uses: actions/checkout@v5
@@ -92,8 +98,5 @@ jobs:
       - name: Validate downloaded package metadata
         run: uv run --with twine python -m twine check dist/*
 
-      - name: Publish to PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          uv publish dist/*
+      - name: Publish to PyPI (Trusted Publisher)
+        run: uv publish dist/*
