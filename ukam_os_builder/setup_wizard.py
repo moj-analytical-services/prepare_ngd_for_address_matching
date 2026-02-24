@@ -6,7 +6,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from ngd_pipeline.api import load_existing_defaults, write_config_and_env
+from ukam_os_builder.api.api import load_existing_defaults, write_config_and_env
 
 console = Console()
 
@@ -54,8 +54,8 @@ def _confirm(label: str, default_yes: bool = True) -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ukam-ngd-setup",
-        description="Interactive setup wizard for NGD pipeline config.",
+        prog="ukam-os-setup",
+        description="Interactive setup wizard for OS builder config.",
     )
     parser.add_argument(
         "--config-out",
@@ -82,13 +82,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Write config using defaults and any provided required flags.",
     )
+    parser.add_argument(
+        "--source",
+        choices=["ngd", "abp"],
+        default=None,
+        help="Source dataset type (required with --non-interactive).",
+    )
     parser.add_argument("--package-id", help="OS package ID (required in non-interactive mode).")
     parser.add_argument("--version-id", help="OS version ID (required in non-interactive mode).")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for `ukam-ngd-setup`."""
+    """Entry point for `ukam-os-setup`."""
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -96,20 +102,34 @@ def main(argv: list[str] | None = None) -> int:
     env_out = Path(args.env_out).resolve()
 
     config = load_existing_defaults(config_out)
+    if args.source is not None:
+        config["source"]["type"] = args.source
 
     if args.non_interactive:
+        if not args.source:
+            parser.error("--source is required with --non-interactive")
         if not args.package_id or not args.version_id:
             parser.error("--package-id and --version-id are required with --non-interactive")
 
+        config["source"]["type"] = args.source
         config["os_downloads"]["package_id"] = args.package_id
         config["os_downloads"]["version_id"] = args.version_id
     else:
         console.print(
             Panel.fit(
-                "[bold]NGD setup wizard[/bold]\nProvide required values first, then optional tuning.",
+                "[bold]OS builder setup wizard[/bold]\nProvide required values first, then optional tuning.",
                 border_style="cyan",
             )
         )
+        console.print("[bold]Source options:[/bold]")
+        console.print("- [bold]ngd[/bold]: OS NGD Address (National Geographic Database)")
+        console.print("- [bold]abp[/bold]: OS AddressBase Premium")
+        source_default = str(config.get("source", {}).get("type", "ngd"))
+        source_value = _prompt_non_empty("source (ngd/abp)", source_default).lower()
+        if source_value not in {"ngd", "abp"}:
+            parser.error("source must be 'ngd' or 'abp'")
+        config["source"]["type"] = source_value
+
         console.print("[bold]Mandatory settings[/bold]")
         config["os_downloads"]["package_id"] = _prompt_non_empty(
             "OS package_id",
@@ -132,6 +152,10 @@ def main(argv: list[str] | None = None) -> int:
         config["paths"]["extracted_dir"] = _prompt_non_empty(
             "extracted_dir",
             str(config["paths"].get("extracted_dir", "./data/extracted")),
+        )
+        config["paths"]["parquet_dir"] = _prompt_non_empty(
+            "parquet_dir",
+            str(config["paths"].get("parquet_dir", "./data/parquet")),
         )
         config["paths"]["output_dir"] = _prompt_non_empty(
             "output_dir",

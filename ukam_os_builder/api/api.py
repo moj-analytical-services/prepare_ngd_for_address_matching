@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
-from ngd_pipeline.os_downloads import get_package_version
-from ngd_pipeline.pipeline import run as run_pipeline
-from ngd_pipeline.settings import Settings, SettingsError, load_settings
+from ukam_os_builder.api.settings import Settings, SettingsError, load_settings
+from ukam_os_builder.os_builder.os_hub import get_package_version
+from ukam_os_builder.pipeline import run as run_pipeline
+from ukam_os_builder.pipeline import supported_steps_for_source
+
+logger = logging.getLogger(__name__)
+
+SourceType = Literal["ngd", "abp"]
 
 DEFAULT_CONFIG: dict[str, object] = {
     "paths": {
         "work_dir": "./data",
         "downloads_dir": "./data/downloads",
         "extracted_dir": "./data/extracted",
+        "parquet_dir": "./data/parquet",
         "output_dir": "./data/output",
+    },
+    "source": {
+        "type": "ngd",
     },
     "os_downloads": {
         "package_id": "",
@@ -23,7 +33,7 @@ DEFAULT_CONFIG: dict[str, object] = {
     "processing": {
         "parquet_compression": "zstd",
         "parquet_compression_level": 9,
-        "num_chunks": 1,
+        "num_chunks": 20,
     },
 }
 
@@ -42,7 +52,7 @@ def render_annotated_config(config: dict[str, object]) -> str:
     )
 
     return (
-        "# NGD Pipeline Configuration\n"
+        "# UKAM OS Builder Configuration\n"
         "# All paths are relative to this config file's directory unless absolute\n\n"
         "paths:\n"
         "  # Base working directory for all data\n"
@@ -51,8 +61,13 @@ def render_annotated_config(config: dict[str, object]) -> str:
         f"  downloads_dir: {paths['downloads_dir']}\n\n"
         "  # Extracted CSV files and intermediate parquet\n"
         f"  extracted_dir: {paths['extracted_dir']}\n\n"
+        "  # ABP split parquet staging directory\n"
+        f"  parquet_dir: {paths['parquet_dir']}\n\n"
         "  # Final output parquet files\n"
         f"  output_dir: {paths['output_dir']}\n\n"
+        "source:\n"
+        "  # Source dataset to process: ngd or abp\n"
+        f"  type: {config['source']['type']}\n\n"
         "# OS Data Hub download settings\n"
         "# Data package and version IDs are mandatory and taken from OS Data Hub\n"
         "# API docs: https://api.os.uk/downloads/v1\n"
@@ -87,6 +102,7 @@ def load_existing_defaults(config_path: Path) -> dict[str, object]:
 
     merged = DEFAULT_CONFIG | loaded
     merged["paths"] = {**DEFAULT_CONFIG["paths"], **(loaded.get("paths") or {})}
+    merged["source"] = {**DEFAULT_CONFIG["source"], **(loaded.get("source") or {})}
     merged["os_downloads"] = {
         **DEFAULT_CONFIG["os_downloads"],
         **(loaded.get("os_downloads") or {}),
@@ -132,6 +148,15 @@ def write_config_and_env(
     config_out_path.write_text(config_text, encoding="utf-8")
     env_written = write_env_file(env_out_path, overwrite=overwrite_env)
 
+    logger.info(f"Wrote config for '{config['source']['type']}' to {config_out_path}")
+    if env_written:
+        logger.info(f"Wrote .env template to {env_out_path}")
+    else:
+        logger.info(
+            f".env file already exists at {env_out_path} and was not overwritten. "
+            "Set overwrite_env=True to overwrite it.",
+        )
+
     return config_out_path, env_out_path, env_written
 
 
@@ -141,6 +166,7 @@ def create_config_and_env(
     *,
     package_id: str,
     version_id: str,
+    source: SourceType,
     overwrite_env: bool = False,
     paths: dict[str, str] | None = None,
     processing: dict[str, Any] | None = None,
@@ -154,6 +180,7 @@ def create_config_and_env(
     config_out_path = Path(config_out).resolve()
     config = load_existing_defaults(config_out_path)
 
+    config["source"]["type"] = source
     config["os_downloads"]["package_id"] = package_id.strip()
     config["os_downloads"]["version_id"] = version_id.strip()
 
@@ -173,18 +200,23 @@ def create_config_and_env(
 def apply_run_overrides(
     settings: Settings,
     *,
+    source: SourceType | None = None,
     package_id: str | None = None,
     version_id: str | None = None,
     work_dir: str | Path | None = None,
     downloads_dir: str | Path | None = None,
     extracted_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
+    schema_path: str | Path | None = None,
     num_chunks: int | None = None,
     duckdb_memory_limit: str | None = None,
     parquet_compression: str | None = None,
     parquet_compression_level: int | None = None,
 ) -> None:
     """Apply runtime overrides to loaded settings."""
+    if source:
+        settings.source.type = source
+
     if package_id:
         settings.os_downloads.package_id = package_id
     if version_id:
@@ -198,6 +230,8 @@ def apply_run_overrides(
         settings.paths.extracted_dir = Path(extracted_dir).resolve()
     if output_dir:
         settings.paths.output_dir = Path(output_dir).resolve()
+    if schema_path:
+        settings.paths.schema_path = Path(schema_path).resolve()
 
     if num_chunks is not None:
         if num_chunks < 1:
@@ -218,8 +252,10 @@ def run_from_config(
     config_path: str | Path,
     *,
     step: str = "all",
+    source: SourceType | None = None,
     env_file: str | Path | None = None,
-    force: bool = False,
+    overwrite: bool | None = None,
+    force: bool | None = None,
     list_only: bool = False,
     package_id: str | None = None,
     version_id: str | None = None,
@@ -227,34 +263,49 @@ def run_from_config(
     downloads_dir: str | Path | None = None,
     extracted_dir: str | Path | None = None,
     output_dir: str | Path | None = None,
+    schema_path: str | Path | None = None,
     num_chunks: int | None = None,
     duckdb_memory_limit: str | None = None,
     parquet_compression: str | None = None,
     parquet_compression_level: int | None = None,
     check_api: bool = True,
-) -> Settings:
+) -> Any:
     """Load settings from config, apply overrides, and run the pipeline."""
-    if list_only and step != "download":
-        raise ValueError("--list-only can only be used with --step download")
+    if list_only and step not in {"download", "all"}:
+        raise ValueError("--list-only can only be used with --step download or --step all")
 
-    settings = load_settings(Path(config_path).resolve(), load_env=True, env_path=env_file)
+    config_path = Path(config_path).resolve()
+
+    settings = load_settings(config_path, load_env=True, env_path=env_file)
 
     apply_run_overrides(
         settings,
+        source=source,
         package_id=package_id,
         version_id=version_id,
         work_dir=work_dir,
         downloads_dir=downloads_dir,
         extracted_dir=extracted_dir,
         output_dir=output_dir,
+        schema_path=schema_path,
         num_chunks=num_chunks,
         duckdb_memory_limit=duckdb_memory_limit,
         parquet_compression=parquet_compression,
         parquet_compression_level=parquet_compression_level,
     )
 
+    source_type = settings.source.type
+    if step != "all":
+        supported_steps = supported_steps_for_source(source_type)
+        if step not in supported_steps:
+            valid_steps = ", ".join([*sorted(supported_steps), "all"])
+            raise ValueError(
+                f"--step {step} is not valid for source {source_type}. Valid steps: {valid_steps}"
+            )
+
     if check_api:
         get_package_version(settings)
 
-    run_pipeline(step=step, settings=settings, force=force, list_only=list_only)
+    overwrite_effective = overwrite if overwrite is not None else bool(force)
+    run_pipeline(step=step, settings=settings, force=overwrite_effective, list_only=list_only)
     return settings

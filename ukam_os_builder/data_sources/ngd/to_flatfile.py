@@ -17,13 +17,10 @@ from time import perf_counter
 
 import duckdb
 
-from ngd_pipeline.settings import Settings, create_duckdb_connection
+from ukam_os_builder._exceptions import ToFlatfileError
+from ukam_os_builder.api.settings import Settings, create_duckdb_connection
 
 logger = logging.getLogger(__name__)
-
-
-class ToFlatfileError(Exception):
-    """Error during flatfile transformation."""
 
 
 # Mapping of file stems to feature types

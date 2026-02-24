@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import ValidationError
 from rich.panel import Panel
 
-from ngd_pipeline.settings import SettingsError
+from ukam_os_builder.api.settings import SettingsError
 
 
 def _build_yaml_snippet_from_missing_paths(missing_paths: list[str]) -> str:

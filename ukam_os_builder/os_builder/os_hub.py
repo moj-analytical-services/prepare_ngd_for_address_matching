@@ -1,27 +1,20 @@
-"""OS Data Hub downloads module.
-
-Handles listing and downloading NGD files from the OS Data Hub API.
-"""
-
 from __future__ import annotations
 
 import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
-from ngd_pipeline.settings import Settings
-
 logger = logging.getLogger(__name__)
 
-# OS Data Hub API base URL
 API_BASE_URL = "https://api.os.uk/downloads/v1"
-
-# Download tuning defaults
-DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
+DEFAULT_CHUNK_SIZE = 1024 * 1024 * 20  # 20 MiB
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 30
+DEFAULT_READ_TIMEOUT_SECONDS = 300
 
 
 @dataclass
@@ -53,48 +46,53 @@ def _add_key_param(url: str, api_key: str) -> str:
     return urlunparse(parts._replace(query=urlencode(params)))
 
 
-def get_package_version(settings: Settings) -> dict:
-    """Fetch package version metadata from the OS Data Hub API.
+def _secret_value(value: Any) -> str:
+    """Extract plain value from pydantic SecretStr or plain strings."""
+    getter = getattr(value, "get_secret_value", None)
+    if callable(getter):
+        return str(getter())
+    return "" if value is None else str(value)
 
-    Args:
-        settings: Application settings containing API credentials and package info.
 
-    Returns:
-        Package version metadata dictionary.
+def _require_api_key(settings: Any) -> str:
+    """Read and validate API key from settings object."""
+    api_key = _secret_value(getattr(settings.os_downloads, "api_key", None)).strip()
+    if not api_key:
+        raise ValueError(
+            "OS_PROJECT_API_KEY not found in environment. "
+            "Create a .env file with OS_PROJECT_API_KEY=<your-key> to use the download step."
+        )
+    return api_key
 
-    Raises:
-        requests.HTTPError: If the API request fails.
-    """
+
+def get_package_version(settings: Any) -> dict:
+    """Fetch package version metadata from the OS Data Hub API."""
     package_id = settings.os_downloads.package_id
     version_id = settings.os_downloads.version_id
-    api_key = settings.os_downloads.api_key.get_secret_value()
+    api_key = _require_api_key(settings)
 
     url = f"{API_BASE_URL}/dataPackages/{package_id}/versions/{version_id}"
     headers = {"key": api_key}
+    connect_timeout = getattr(
+        settings.os_downloads,
+        "connect_timeout_seconds",
+        DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    )
+    read_timeout = getattr(
+        settings.os_downloads,
+        "read_timeout_seconds",
+        DEFAULT_READ_TIMEOUT_SECONDS,
+    )
 
     logger.debug("Fetching package metadata from %s", url)
-    response = requests.get(
-        url,
-        headers=headers,
-        timeout=(
-            settings.os_downloads.connect_timeout_seconds,
-            settings.os_downloads.read_timeout_seconds,
-        ),
-    )
+    response = requests.get(url, headers=headers, timeout=(connect_timeout, read_timeout))
     response.raise_for_status()
 
     return response.json()
 
 
 def list_downloads(metadata: dict) -> list[DownloadItem]:
-    """Extract list of downloadable files from package metadata.
-
-    Args:
-        metadata: Package version metadata from the API.
-
-    Returns:
-        List of DownloadItem objects.
-    """
+    """Extract list of downloadable files from package metadata."""
     downloads = metadata.get("downloads", [])
     items = []
 
@@ -112,13 +110,7 @@ def list_downloads(metadata: dict) -> list[DownloadItem]:
 
 
 def print_download_summary(metadata: dict, items: list[DownloadItem], api_key: str) -> None:
-    """Print a summary of available downloads.
-
-    Args:
-        metadata: Package version metadata.
-        items: List of downloadable files.
-        api_key: API key for generating download URLs.
-    """
+    """Print a summary of available downloads."""
     print("=" * 80)
     print(f"Data Package: {metadata.get('dataPackage', {}).get('name', 'N/A')}")
     print(f"Version ID: {metadata.get('id', 'N/A')}")
@@ -167,29 +159,11 @@ def download_file(
     expected_md5: str | None = None,
     force: bool = False,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
-    connect_timeout_seconds: int = 30,
-    read_timeout_seconds: int = 300,
+    connect_timeout_seconds: int = DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    read_timeout_seconds: int = DEFAULT_READ_TIMEOUT_SECONDS,
     session: requests.Session | None = None,
 ) -> bool:
-    """Download a file with streaming and checksum verification.
-
-    Downloads to a .part file first, then atomically renames on success.
-
-    Args:
-        url: Download URL.
-        dest_path: Destination file path.
-        api_key: API key for authentication.
-        expected_md5: Expected MD5 hash (optional).
-        force: Force download even if file exists.
-
-    Returns:
-        True if file was downloaded, False if skipped (already exists).
-
-    Raises:
-        requests.HTTPError: If download fails.
-        ValueError: If MD5 checksum doesn't match.
-    """
-    # Skip if file exists and matches expected MD5
+    """Download a file with streaming and checksum verification."""
     if dest_path.exists() and not force:
         if expected_md5:
             actual_md5 = _calculate_md5(dest_path)
@@ -201,10 +175,7 @@ def download_file(
             logger.info("File already exists: %s", dest_path.name)
             return False
 
-    # Ensure directory exists
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Download to .part file
     part_path = dest_path.with_suffix(dest_path.suffix + ".part")
     download_url = _add_key_param(url, api_key)
 
@@ -219,7 +190,6 @@ def download_file(
     try:
         response.raise_for_status()
 
-        # Get content length for progress
         total_size = int(response.headers.get("content-length", 0))
         downloaded = 0
         next_log = 10 * 1024 * 1024
@@ -246,7 +216,6 @@ def download_file(
     finally:
         response.close()
 
-    # Verify MD5 if expected
     if expected_md5:
         actual_md5 = md5_hash.hexdigest()  # type: ignore[union-attr]
         if actual_md5 != expected_md5:
@@ -255,7 +224,6 @@ def download_file(
                 f"MD5 mismatch for {dest_path.name}: expected {expected_md5}, got {actual_md5}"
             )
 
-    # Atomic rename
     part_path.rename(dest_path)
     logger.info("Downloaded: %s (%s)", dest_path.name, format_size(downloaded))
 
@@ -263,43 +231,36 @@ def download_file(
 
 
 def run_download_step(
-    settings: Settings,
+    settings: Any,
     force: bool = False,
     list_only: bool = False,
 ) -> list[Path]:
-    """Run the download step of the pipeline.
-
-    Args:
-        settings: Application settings.
-        force: Force re-download even if files exist.
-        list_only: Just list available files, don't download.
-
-    Returns:
-        List of downloaded file paths (empty if list_only=True).
-
-    Raises:
-        requests.HTTPError: If API requests fail.
-    """
+    """Run the OS Data Hub download step for any compatible settings object."""
+    api_key = _require_api_key(settings)
     downloads_dir = settings.paths.downloads_dir
-    api_key = settings.os_downloads.api_key.get_secret_value()
 
-    # Fetch package metadata
     logger.info("Fetching package metadata...")
     metadata = get_package_version(settings)
-
-    # Get list of files
     items = list_downloads(metadata)
 
     if list_only:
         print_download_summary(metadata, items, api_key)
         return []
 
-    # Ensure downloads directory exists
     downloads_dir.mkdir(parents=True, exist_ok=True)
 
-    session = requests.Session()
+    connect_timeout = getattr(
+        settings.os_downloads,
+        "connect_timeout_seconds",
+        DEFAULT_CONNECT_TIMEOUT_SECONDS,
+    )
+    read_timeout = getattr(
+        settings.os_downloads,
+        "read_timeout_seconds",
+        DEFAULT_READ_TIMEOUT_SECONDS,
+    )
 
-    # Download each file
+    session = requests.Session()
     downloaded: list[Path] = []
     try:
         for item in items:
@@ -314,8 +275,8 @@ def run_download_step(
                 api_key=api_key,
                 expected_md5=item.md5,
                 force=force,
-                connect_timeout_seconds=settings.os_downloads.connect_timeout_seconds,
-                read_timeout_seconds=settings.os_downloads.read_timeout_seconds,
+                connect_timeout_seconds=connect_timeout,
+                read_timeout_seconds=read_timeout,
                 session=session,
             )
 

@@ -1,8 +1,3 @@
-"""Extract module for NGD Pipeline.
-
-Handles extraction of downloaded zip files and conversion of CSV files to parquet.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -12,27 +7,40 @@ from pathlib import Path
 
 import duckdb
 
-from ngd_pipeline.settings import Settings
+from ukam_os_builder.api.settings import Settings
 
 logger = logging.getLogger(__name__)
 
 
 def find_downloaded_zips(downloads_dir: Path) -> list[Path]:
-    """Find all downloaded zip files.
-
-    Args:
-        downloads_dir: Directory containing downloaded files.
-
-    Returns:
-        List of paths to zip files.
-    """
+    """Find all downloaded zip files in a directory."""
     if not downloads_dir.exists():
         return []
 
     zip_files = list(downloads_dir.glob("*.zip"))
     zip_files.sort()
-
     return zip_files
+
+
+def _filter_zips_for_source(zip_files: list[Path], source: str) -> list[Path]:
+    source_lower = source.lower()
+    if source_lower == "ngd":
+        ngd_zips = [
+            zip_path for zip_path in zip_files if zip_path.name.lower().startswith("add_gb_")
+        ]
+        return ngd_zips or zip_files
+    if source_lower == "abp":
+        abp_zips = [
+            zip_path for zip_path in zip_files if "addressbasepremium" in zip_path.name.lower()
+        ]
+        return abp_zips or zip_files
+    return zip_files
+
+
+def _should_convert_csv_to_parquet(csv_path: Path, source: str) -> bool:
+    if source.lower() == "ngd":
+        return csv_path.name.lower().startswith("add_gb_")
+    return True
 
 
 def extract_zip_to_csv(
@@ -139,7 +147,40 @@ def convert_csv_to_parquet(
     return output_path
 
 
-def run_extract_step(settings: Settings, force: bool = False) -> list[Path]:
+def discover_raw_csv_files(extracted_dir: Path) -> list[Path]:
+    """Discover raw ABP CSV files in the extracted directory.
+
+    The ABP data comes as multiple CSV files (chunks) that need to be
+    processed together.
+
+    Args:
+        extracted_dir: Directory containing extracted files.
+
+    Returns:
+        List of paths to CSV files to process.
+    """
+    if not extracted_dir.exists():
+        logger.warning("Extracted directory does not exist: %s", extracted_dir)
+        return []
+
+    # Find all CSV files recursively
+    csv_files = list(extracted_dir.rglob("*.csv"))
+
+    # Sort for deterministic ordering
+    csv_files.sort()
+
+    logger.info("Discovered %d CSV file(s) in %s", len(csv_files), extracted_dir)
+    for f in csv_files[:5]:  # Log first few
+        logger.debug("  %s", f.name)
+    if len(csv_files) > 5:
+        logger.debug("  ... and %d more", len(csv_files) - 5)
+
+    return csv_files
+
+
+def run_extract_step(
+    settings: Settings, force: bool = False, convert_to_parquet: bool = True
+) -> list[Path]:
     """Run the extract step of the pipeline.
 
     Extracts all downloaded zip files and converts CSVs to parquet.
@@ -163,23 +204,42 @@ def run_extract_step(settings: Settings, force: bool = False) -> list[Path]:
         logger.warning("No zip files found in %s. Run --step download first.", downloads_dir)
         return []
 
+    source_type = settings.source.type
+    filtered_zip_files = _filter_zips_for_source(zip_files, source_type)
+    if len(filtered_zip_files) != len(zip_files):
+        logger.info(
+            "Filtered %d zip file(s) for source '%s' (from %d total)",
+            len(filtered_zip_files),
+            source_type,
+            len(zip_files),
+        )
+    zip_files = filtered_zip_files
+
     logger.info("Found %d zip file(s) to extract", len(zip_files))
 
     # Extract each zip and convert CSVs to parquet
     parquet_files: list[Path] = []
+    extracted_csvs: list[Path] = []
     for zip_path in zip_files:
         csv_paths = extract_zip_to_csv(zip_path, extracted_dir, force=force)
+        extracted_csvs.extend(csv_paths)
 
-        # Convert each CSV to parquet
-        parquet_dir = extracted_dir / "parquet"
-        for csv_path in csv_paths:
-            parquet_name = csv_path.stem + ".parquet"
-            parquet_path = parquet_dir / parquet_name
-            convert_csv_to_parquet(csv_path, parquet_path, force=force)
-            parquet_files.append(parquet_path)
+        if convert_to_parquet:
+            # Convert each CSV to parquet
+            parquet_dir = extracted_dir / "parquet"
+            for csv_path in csv_paths:
+                if not _should_convert_csv_to_parquet(csv_path, source_type):
+                    logger.debug(
+                        "Skipping CSV-to-parquet for source '%s': %s", source_type, csv_path
+                    )
+                    continue
+                parquet_name = csv_path.stem + ".parquet"
+                parquet_path = parquet_dir / parquet_name
+                convert_csv_to_parquet(csv_path, parquet_path, force=force)
+                parquet_files.append(parquet_path)
 
     logger.info("Extraction complete: %d parquet files", len(parquet_files))
-    return parquet_files
+    return parquet_files if convert_to_parquet else extracted_csvs
 
 
 def get_parquet_dir(settings: Settings) -> Path:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import duckdb
 import yaml
@@ -26,6 +26,14 @@ class PathSettings(StrictBaseModel):
     downloads_dir: Path
     extracted_dir: Path
     output_dir: Path
+    parquet_dir: Path | None = None
+    schema_path: Path | None = None
+
+
+class SourceSettings(StrictBaseModel):
+    """Source selection for pipeline runtime."""
+
+    type: Literal["ngd", "abp"] = "ngd"
 
 
 class OSDownloadSettings(StrictBaseModel):
@@ -67,7 +75,7 @@ class ProcessingSettings(StrictBaseModel):
     parquet_compression: str = "zstd"
     parquet_compression_level: int = 9
     duckdb_memory_limit: str | None = None
-    num_chunks: int = 1
+    num_chunks: int = 20
 
     @field_validator("num_chunks")
     @classmethod
@@ -81,6 +89,7 @@ class Settings(StrictBaseModel):
     """Complete application settings."""
 
     paths: PathSettings
+    source: SourceSettings = SourceSettings()
     os_downloads: OSDownloadSettings
     processing: ProcessingSettings
     config_path: Path
@@ -184,12 +193,20 @@ def load_settings(
     downloads_dir_raw = str(paths_config.get("downloads_dir", Path(work_dir_raw) / "downloads"))
     extracted_dir_raw = str(paths_config.get("extracted_dir", Path(work_dir_raw) / "extracted"))
     output_dir_raw = str(paths_config.get("output_dir", Path(work_dir_raw) / "output"))
+    parquet_dir_raw = str(paths_config.get("parquet_dir", Path(work_dir_raw) / "parquet"))
+    schema_path_value = paths_config.get("schema_path")
 
     resolved_paths = {
         "work_dir": _resolve_path(base_dir, work_dir_raw),
         "downloads_dir": _resolve_path(base_dir, downloads_dir_raw),
         "extracted_dir": _resolve_path(base_dir, extracted_dir_raw),
         "output_dir": _resolve_path(base_dir, output_dir_raw),
+        "parquet_dir": _resolve_path(base_dir, parquet_dir_raw),
+        "schema_path": (
+            _resolve_path(base_dir, str(schema_path_value))
+            if schema_path_value is not None
+            else None
+        ),
     }
 
     os_config = config.get("os_downloads", {})
@@ -199,6 +216,7 @@ def load_settings(
     settings_payload = {
         **config,
         "paths": resolved_paths,
+        "source": config.get("source", {}),
         "os_downloads": {
             **os_config,
             "api_key": api_key,
