@@ -3,27 +3,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import yaml
 from rich.console import Console
 from rich.panel import Panel
 
-DEFAULT_CONFIG: dict[str, object] = {
-    "paths": {
-        "work_dir": "./data",
-        "downloads_dir": "./data/downloads",
-        "extracted_dir": "./data/extracted",
-        "output_dir": "./data/output",
-    },
-    "os_downloads": {
-        "package_id": "",
-        "version_id": "",
-    },
-    "processing": {
-        "parquet_compression": "zstd",
-        "parquet_compression_level": 9,
-        "num_chunks": 1,
-    },
-}
+from ngd_pipeline.api import load_existing_defaults, write_config_and_env
 
 console = Console()
 
@@ -69,93 +52,6 @@ def _confirm(label: str, default_yes: bool = True) -> bool:
     return raw in {"y", "yes"}
 
 
-def _render_annotated_config(config: dict[str, object]) -> str:
-    """Render config YAML with explanatory comments."""
-    paths = config["paths"]
-    os_downloads = config["os_downloads"]
-    processing = config["processing"]
-
-    duckdb_memory_limit = processing.get("duckdb_memory_limit")
-    duckdb_memory_limit_line = (
-        f'  duckdb_memory_limit: "{duckdb_memory_limit}"\n'
-        if duckdb_memory_limit
-        else '  # duckdb_memory_limit: "8GB"\n'
-    )
-
-    return (
-        "# NGD Pipeline Configuration\n"
-        "# All paths are relative to this config file's directory unless absolute\n\n"
-        "paths:\n"
-        "  # Base working directory for all data\n"
-        f"  work_dir: {paths['work_dir']}\n\n"
-        "  # Downloaded zip files from OS\n"
-        f"  downloads_dir: {paths['downloads_dir']}\n\n"
-        "  # Extracted CSV files and intermediate parquet\n"
-        f"  extracted_dir: {paths['extracted_dir']}\n\n"
-        "  # Final output parquet files\n"
-        f"  output_dir: {paths['output_dir']}\n\n"
-        "# OS Data Hub download settings\n"
-        "# Data package and version IDs are mandatory and taken from OS Data Hub\n"
-        "# API docs: https://api.os.uk/downloads/v1\n"
-        "os_downloads:\n"
-        "  # Data package ID from OS Data Hub\n"
-        f'  package_id: "{os_downloads["package_id"]}"\n'
-        "  # Version ID (update this when new data is released)\n"
-        f'  version_id: "{os_downloads["version_id"]}"\n\n'
-        "# Processing options\n"
-        "processing:\n"
-        "  # Parquet compression codec for intermediate/final files\n"
-        f"  parquet_compression: {processing['parquet_compression']}\n"
-        "  # Compression level (higher usually means smaller files but slower writes)\n"
-        f"  parquet_compression_level: {processing['parquet_compression_level']}\n\n"
-        "  # DuckDB memory limit (optional)\n"
-        "  # If set, limits how much RAM DuckDB can use (e.g., '4GB', '500MB')\n"
-        "  # If not set, DuckDB uses its default memory strategy\n"
-        f"{duckdb_memory_limit_line}\n"
-        "  # Number of chunks to split flatfile processing into (default: 1)\n"
-        "  # Use higher values (e.g., 10-20) for lower memory usage\n"
-        f"  num_chunks: {processing['num_chunks']}\n"
-    )
-
-
-def _load_existing_defaults(config_path: Path) -> dict[str, object]:
-    if not config_path.exists():
-        return DEFAULT_CONFIG
-
-    with open(config_path) as f:
-        loaded = yaml.safe_load(f) or {}
-
-    merged = DEFAULT_CONFIG | loaded
-    merged["paths"] = {**DEFAULT_CONFIG["paths"], **(loaded.get("paths") or {})}
-    merged["os_downloads"] = {
-        **DEFAULT_CONFIG["os_downloads"],
-        **(loaded.get("os_downloads") or {}),
-    }
-    merged["processing"] = {
-        **DEFAULT_CONFIG["processing"],
-        **(loaded.get("processing") or {}),
-    }
-    return merged
-
-
-def _write_env_file(path: Path, overwrite: bool = False) -> bool:
-    """Write .env file with credential placeholders.
-
-    Returns True if file was written, False if skipped.
-    """
-    if path.exists() and not overwrite:
-        return False
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "# OS Data Hub API credentials\n"
-        "OS_PROJECT_API_KEY=your_api_key_here\n"
-        "OS_PROJECT_API_SECRET=your_api_secret_here\n",
-        encoding="utf-8",
-    )
-    return True
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ukam-ngd-setup",
@@ -199,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     config_out = Path(args.config_out).resolve()
     env_out = Path(args.env_out).resolve()
 
-    config = _load_existing_defaults(config_out)
+    config = load_existing_defaults(config_out)
 
     if args.non_interactive:
         if not args.package_id or not args.version_id:
@@ -264,11 +160,12 @@ def main(argv: list[str] | None = None) -> int:
             elif "duckdb_memory_limit" in config["processing"]:
                 del config["processing"]["duckdb_memory_limit"]
 
-    config_out.parent.mkdir(parents=True, exist_ok=True)
-    config_text = _render_annotated_config(config)
-    config_out.write_text(config_text, encoding="utf-8")
-
-    env_written = _write_env_file(env_out, overwrite=args.overwrite_env)
+    config_out, env_out, env_written = write_config_and_env(
+        config=config,
+        config_out=config_out,
+        env_out=env_out,
+        overwrite_env=args.overwrite_env,
+    )
 
     console.print(f"[green]✓[/green] Wrote config: [bold]{config_out}[/bold]")
     if env_written:

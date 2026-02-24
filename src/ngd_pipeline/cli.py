@@ -6,10 +6,9 @@ from pathlib import Path
 
 from rich.console import Console
 
+from ngd_pipeline.api import run_from_config
 from ngd_pipeline.cli_errors import format_settings_error, render_config_error_panel
-from ngd_pipeline.os_downloads import get_package_version
-from ngd_pipeline.pipeline import run
-from ngd_pipeline.settings import Settings, SettingsError, load_settings
+from ngd_pipeline.settings import SettingsError
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -22,37 +21,6 @@ def _configure_logging(verbose: bool) -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-def _apply_overrides(settings: Settings, args: argparse.Namespace) -> None:
-    """Apply CLI-provided config overrides to loaded settings."""
-    if args.package_id:
-        settings.os_downloads.package_id = args.package_id
-    if args.version_id:
-        settings.os_downloads.version_id = args.version_id
-
-    if args.work_dir:
-        settings.paths.work_dir = Path(args.work_dir).resolve()
-    if args.downloads_dir:
-        settings.paths.downloads_dir = Path(args.downloads_dir).resolve()
-    if args.extracted_dir:
-        settings.paths.extracted_dir = Path(args.extracted_dir).resolve()
-    if args.output_dir:
-        settings.paths.output_dir = Path(args.output_dir).resolve()
-
-    if args.num_chunks is not None:
-        if args.num_chunks < 1:
-            raise SettingsError("--num-chunks must be >= 1")
-        settings.processing.num_chunks = args.num_chunks
-
-    if args.duckdb_memory_limit:
-        settings.processing.duckdb_memory_limit = args.duckdb_memory_limit
-
-    if args.parquet_compression:
-        settings.processing.parquet_compression = args.parquet_compression
-
-    if args.parquet_compression_level is not None:
-        settings.processing.parquet_compression_level = args.parquet_compression_level
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -131,25 +99,29 @@ def main(argv: list[str] | None = None) -> int:
     try:
         console.rule("[bold cyan]NGD Builder[/bold cyan]")
         config_path = Path(args.config).resolve()
-        settings = load_settings(config_path, load_env=True, env_path=args.env_file)
-        _apply_overrides(settings, args)
-
-        logger.info("Loaded config from %s", config_path)
         console.print(f"[green]✓[/green] Loaded config: [bold]{config_path}[/bold]")
         console.print(f"[cyan]Step:[/cyan] {args.step}")
-
-        logger.info("Running OS API auth/connectivity check...")
         console.print("[cyan]Checking OS API credentials and connectivity...[/cyan]")
-        get_package_version(settings)
-        logger.info("API connectivity check passed")
-        console.print("[green]✓[/green] API connectivity check passed")
 
-        run(
+        run_from_config(
+            config_path=config_path,
             step=args.step,
-            settings=settings,
+            env_file=args.env_file,
             force=args.force,
             list_only=args.list_only,
+            package_id=args.package_id,
+            version_id=args.version_id,
+            work_dir=args.work_dir,
+            downloads_dir=args.downloads_dir,
+            extracted_dir=args.extracted_dir,
+            output_dir=args.output_dir,
+            num_chunks=args.num_chunks,
+            duckdb_memory_limit=args.duckdb_memory_limit,
+            parquet_compression=args.parquet_compression,
+            parquet_compression_level=args.parquet_compression_level,
         )
+        logger.info("Pipeline run completed")
+        console.print("[green]✓[/green] API connectivity check passed")
         console.print("[bold green]Build completed successfully[/bold green]")
         return 0
     except (SettingsError, ValueError) as exc:
