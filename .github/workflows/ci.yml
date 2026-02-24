@@ -42,7 +42,7 @@ jobs:
         run: uv sync --all-extras --all-groups
 
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check ukam_os_builder/ tests/
 
       - name: Test
         run: uv run pytest
