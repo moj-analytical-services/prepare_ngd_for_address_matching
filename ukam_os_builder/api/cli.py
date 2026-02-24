@@ -6,9 +6,9 @@ from pathlib import Path
 
 from rich.console import Console
 
-from ngd_pipeline.api import run_from_config
-from ngd_pipeline.cli_errors import format_settings_error, render_config_error_panel
-from ngd_pipeline.settings import SettingsError
+from ukam_os_builder.api.api import run_from_config
+from ukam_os_builder.api.cli_errors import format_settings_error, render_config_error_panel
+from ukam_os_builder.api.settings import SettingsError
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -25,8 +25,8 @@ def _configure_logging(verbose: bool) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ukam-ngd-build",
-        description="Build NGD data for uk_address_matcher.",
+        prog="ukam-os-build",
+        description="Build OS address data for uk_address_matcher.",
     )
     parser.add_argument(
         "--config",
@@ -40,19 +40,31 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--step",
-        choices=["download", "extract", "flatfile", "all"],
+        choices=["download", "extract", "split", "flatfile", "all"],
         default="all",
         help="Pipeline step to run (default: all).",
     )
     parser.add_argument(
-        "--force",
+        "--source",
+        choices=["ngd", "abp"],
+        default=None,
+        help="Override source.type from config (ngd or abp).",
+    )
+    parser.add_argument(
+        "--overwrite",
         action="store_true",
-        help="Force re-run even if outputs already exist.",
+        help="Overwrite step outputs and re-run even if outputs already exist.",
+    )
+    parser.add_argument(
+        "--force",
+        dest="overwrite",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--list-only",
         action="store_true",
-        help="List available download files (only valid with --step download).",
+        help="List available download files (only valid with --step download or --step all).",
     )
 
     parser.add_argument("--package-id", help="Override os_downloads.package_id.")
@@ -62,6 +74,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--downloads-dir", help="Override paths.downloads_dir.")
     parser.add_argument("--extracted-dir", help="Override paths.extracted_dir.")
     parser.add_argument("--output-dir", help="Override paths.output_dir.")
+    parser.add_argument("--schema-path", help="Override paths.schema_path (ABP split schema).")
 
     parser.add_argument("--num-chunks", type=int, help="Override processing.num_chunks.")
     parser.add_argument(
@@ -87,17 +100,17 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for `ukam-ngd-build`."""
+    """Entry point for `ukam-os-build`."""
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.list_only and args.step != "download":
-        parser.error("--list-only can only be used with --step download")
+    if args.list_only and args.step not in {"download", "all"}:
+        parser.error("--list-only can only be used with --step download or --step all")
 
     _configure_logging(args.verbose)
 
     try:
-        console.rule("[bold cyan]NGD Builder[/bold cyan]")
+        console.rule("[bold cyan]OS Builder[/bold cyan]")
         config_path = Path(args.config).resolve()
         console.print(f"[green]✓[/green] Loaded config: [bold]{config_path}[/bold]")
         console.print(f"[cyan]Step:[/cyan] {args.step}")
@@ -106,8 +119,9 @@ def main(argv: list[str] | None = None) -> int:
         run_from_config(
             config_path=config_path,
             step=args.step,
+            source=args.source,
             env_file=args.env_file,
-            force=args.force,
+            overwrite=args.overwrite,
             list_only=args.list_only,
             package_id=args.package_id,
             version_id=args.version_id,
@@ -115,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             downloads_dir=args.downloads_dir,
             extracted_dir=args.extracted_dir,
             output_dir=args.output_dir,
+            schema_path=args.schema_path,
             num_chunks=args.num_chunks,
             duckdb_memory_limit=args.duckdb_memory_limit,
             parquet_compression=args.parquet_compression,

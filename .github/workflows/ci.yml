@@ -30,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.10"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -55,11 +55,11 @@ jobs:
 
       - name: Smoke test wheel installs and CLI
         run: |
-          uv venv .venv-wheeltest -p 3.12 --clear
+          uv venv .venv-wheeltest -p 3.10 --clear
           uv pip install --python .venv-wheeltest/bin/python dist/*.whl
           .venv-wheeltest/bin/python -c "import ngd_pipeline; print('Imported ngd_pipeline OK')"
-          .venv-wheeltest/bin/ukam-ngd-build --help
-          .venv-wheeltest/bin/ukam-ngd-setup --help
+          .venv-wheeltest/bin/ukam-os-build --help
+          .venv-wheeltest/bin/ukam-os-setup --help
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4

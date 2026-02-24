@@ -1,0 +1,639 @@
+# AddressBase Premium Schema Definitions
+# Based on OS Download Products' Documentation (Generated: 2025-12-15)
+# To update, run the scripts/os_docs_to_md.py, and ask an LLM to update this based on the new context
+
+header:
+  description: "Record Identifier 10. A structured entry that provides key information about the source, time and supply mechanism of the AddressBase Premium file."
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies the record as a Header Record (type 10)."
+    custodian_name:
+      type: VARCHAR
+      description: "Name of the data provider organisation."
+    local_custodian_code:
+      type: INTEGER
+      description: "Unique identifier for the data provider code."
+    process_date:
+      type: DATE
+      description: "The date on which the data supply was generated."
+    volume_number:
+      type: INTEGER
+      description: "The sequential number of the volume in the transfer set."
+    entry_date:
+      type: DATE
+      description: "Date of data entry for this volume."
+    time_stamp:
+      type: TIME
+      description: "Time of file creation in HH:MM:SS format in a 24-hour clock."
+    version:
+      type: VARCHAR
+      description: "Version number of the product schema."
+    file_type:
+      type: VARCHAR
+      description: "States whether the data supply is a full supply or change only supply."
+
+street:
+  description: "Record Identifier 11. A way or thoroughfare providing a right of way on foot, by cycle or by motor vehicle, or access to more than one property."
+  primary_key: [usrn]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as a Street Record (type 11)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    usrn:
+      type: INTEGER
+      description: "Unique Street Reference Number (USRN) - the unique key for the record."
+    record_type:
+      type: INTEGER
+      description: "Description of the street record type (e.g. named or numbered)."
+    swa_org_ref_naming:
+      type: INTEGER
+      description: "Code identifying the Street Naming and Numbering Authority or Local Highway Authority."
+    state:
+      type: VARCHAR
+      description: "Code identifying the current state of the Street (e.g. Open)."
+    state_date:
+      type: DATE
+      description: "Date at which the street achieved its current state."
+    street_surface:
+      type: VARCHAR
+      description: "Code to indicate the surface finish of the street."
+    street_classification:
+      type: VARCHAR
+      description: "Code for the primary street classification."
+    version:
+      type: INTEGER
+      description: "Version number of the street record."
+    street_start_date:
+      type: DATE
+      description: "Date this record or version was inserted into the database."
+    street_end_date:
+      type: DATE
+      description: "Date on which the street was closed in the product database."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute of the Record was last changed."
+    record_entry_date:
+      type: DATE
+      description: "The date that the record was entered into the Local Authority database."
+    street_start_x:
+      type: DOUBLE
+      description: "British National Grid X coordinate for the start point."
+    street_start_y:
+      type: DOUBLE
+      description: "British National Grid Y coordinate for the start point."
+    street_start_lat:
+      type: DOUBLE
+      description: "ETRS89 Latitude start point."
+    street_start_long:
+      type: DOUBLE
+      description: "ETRS89 Longitude start point."
+    street_end_x:
+      type: DOUBLE
+      description: "British National Grid X coordinate for the end point."
+    street_end_y:
+      type: DOUBLE
+      description: "British National Grid Y coordinate for the end point."
+    street_end_lat:
+      type: DOUBLE
+      description: "ETRS89 Latitude end point."
+    street_end_long:
+      type: DOUBLE
+      description: "ETRS89 Longitude end point."
+    street_tolerance:
+      type: INTEGER
+      description: "The accuracy of data capture (in metres)."
+
+street_descriptor:
+  description: "Record Identifier 15. A descriptive identifier providing additional information about the street feature (locality, town, street name)."
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as a Street Descriptor record (type 15)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    usrn:
+      type: INTEGER
+      description: "Unique Street Reference Number (USRN)."
+      foreign_key: street.usrn
+    street_description:
+      type: VARCHAR
+      description: "Name, description or Street number for this record."
+    locality:
+      type: VARCHAR
+      description: "Defines an area or geographical identifier within a town, village or hamlet."
+    town_name:
+      type: VARCHAR
+      description: "The town name."
+    administrative_area:
+      type: VARCHAR
+      description: "Local Highway Authority name for the area this record exists within."
+    language:
+      type: VARCHAR
+      description: "A code identifying the language in use for the record (e.g. ENG, CYM)."
+    start_date:
+      type: DATE
+      description: "Date this record was first created in the database."
+    end_date:
+      type: DATE
+      description: "The date on which this record ceased to exist."
+    last_update_date:
+      type: DATE
+      description: "The date on which an attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the record was entered into the Local Authority database."
+
+blpu:
+  description: "Record Identifier 21. Basic Land and Property Unit. A real-world object that is of interest and within scope of the CLASS_SCHEME."
+  primary_key: [uprn]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as a BLPU Record (type 21)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "Unique Property Reference Number (UPRN) - the unique key for the record."
+    logical_status:
+      type: INTEGER
+      description: "Logical status (e.g. live, provisional, historic)."
+    blpu_state:
+      type: VARCHAR
+      description: "Code identifying the current state of the BLPU."
+    blpu_state_date:
+      type: DATE
+      description: "Date at which the BLPU achieved its current state."
+    parent_uprn:
+      type: BIGINT
+      description: "UPRN of the parent Record if a parent-child relationship exists."
+      foreign_key: blpu.uprn
+    x_coordinate:
+      type: DOUBLE
+      description: "British National Grid X coordinate."
+    y_coordinate:
+      type: DOUBLE
+      description: "British National Grid Y coordinate."
+    latitude:
+      type: DOUBLE
+      description: "ETRS89 Latitude."
+    longitude:
+      type: DOUBLE
+      description: "ETRS89 Longitude."
+    rpc:
+      type: SMALLINT
+      description: "Representative Point Code - accuracy of the coordinate."
+    local_custodian_code:
+      type: INTEGER
+      description: "Unique identifier of the Local Authority Custodian."
+    country:
+      type: VARCHAR
+      description: "The country in which a record can be found (e.g. E, W, S)."
+    start_date:
+      type: DATE
+      description: "The date on which the address record was inserted into the database."
+    end_date:
+      type: DATE
+      description: "The date on which the address record was closed in the database."
+    last_update_date:
+      type: DATE
+      description: "The date on which any of the attributes were last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which this record was inserted into the Local Authority database."
+    addressbase_postal:
+      type: VARCHAR
+      description: "Identifies addresses believed to be capable of receiving mail."
+    postcode_locator:
+      type: VARCHAR
+      description: "The Postcode where matched to PAF, or spatially derived."
+    multi_occ_count:
+      type: SMALLINT
+      description: "Count of all child UPRNs for this record."
+
+application_cross_reference:
+  description: "Record Identifier 23. Links to third-party identifiers (e.g. OS MasterMap TOID, VOA)."
+  primary_key: [xref_key]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as an Application Cross Reference Record (type 23)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    xref_key:
+      type: VARCHAR
+      description: "Unique key for the application cross reference record."
+    cross_reference:
+      type: VARCHAR
+      description: "Primary key of corresponding record in an external dataset."
+    version:
+      type: VARCHAR
+      description: "Version of the external object (e.g. TOID version)."
+    source:
+      type: VARCHAR
+      description: "External dataset identity (e.g. 7666MT for TOID)."
+    start_date:
+      type: DATE
+      description: "Date the feature was matched to the cross reference dataset."
+    end_date:
+      type: DATE
+      description: "The date on which the external cross reference was no longer valid."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the LA record matched was inserted into the LA database."
+
+lpi:
+  description: "Record Identifier 24. Land and Property Identifier. A structured entry that identifies a BLPU (e.g. SAO/PAO structure)."
+  primary_key: [lpi_key]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this Record as an LPI Record (type 24)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    lpi_key:
+      type: VARCHAR
+      description: "Unique key for the LPI."
+    language:
+      type: VARCHAR
+      description: "Code identifying the language used for the LPI record."
+    logical_status:
+      type: INTEGER
+      description: "Logical status of this record."
+    start_date:
+      type: DATE
+      description: "Date that this LPI record was first loaded into the database."
+    end_date:
+      type: DATE
+      description: "The date this record ceased to exist in the database."
+    last_update_date:
+      type: DATE
+      description: "The last date an attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the record was inserted into the Local Authority database."
+    sao_start_number:
+      type: INTEGER
+      description: "Secondary Addressable Object start number."
+    sao_start_suffix:
+      type: VARCHAR
+      description: "Suffix to the SAO Start Number."
+    sao_end_number:
+      type: INTEGER
+      description: "Secondary Addressable Object end number."
+    sao_end_suffix:
+      type: VARCHAR
+      description: "Suffix to the SAO End Number."
+    sao_text:
+      type: VARCHAR
+      description: "Building name or description for the SAO."
+    pao_start_number:
+      type: INTEGER
+      description: "Primary Addressable Object start number."
+    pao_start_suffix:
+      type: VARCHAR
+      description: "Suffix to the PAO Start Number."
+    pao_end_number:
+      type: INTEGER
+      description: "Primary Addressable Object end number."
+    pao_end_suffix:
+      type: VARCHAR
+      description: "Suffix to the PAO End Number."
+    pao_text:
+      type: VARCHAR
+      description: "Building name or description for the PAO."
+    usrn:
+      type: INTEGER
+      description: "USRN - foreign key linking the Street record to the LPI record."
+      foreign_key: street.usrn
+    usrn_match_indicator:
+      type: INTEGER
+      description: "Indicates how the item was matched to a Street (1=Manual, 2=Spatial)."
+    area_name:
+      type: VARCHAR
+      description: "Third level of geographic area name (e.g. island names)."
+    level:
+      type: VARCHAR
+      description: "Vertical position of the property."
+    official_flag:
+      type: VARCHAR
+      description: "Status of the Address (Official or not)."
+
+delivery_point:
+  description: "Record Identifier 28. A property that receives deliveries from Royal Mail (PAF data)."
+  primary_key: [udprn]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies the record as a Delivery Point Address Record (type 28)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    udprn:
+      type: BIGINT
+      description: "Royal Mail's Unique Delivery Point Reference Number."
+    organisation_name:
+      type: VARCHAR
+      description: "Business name given to a delivery point."
+    department_name:
+      type: VARCHAR
+      description: "Subdivision of the main organisation."
+    sub_building_name:
+      type: VARCHAR
+      description: "Identifiers for subdivisions of properties (e.g. FLAT 3)."
+    building_name:
+      type: VARCHAR
+      description: "Description applied to a single building or small group."
+    building_number:
+      type: INTEGER
+      description: "Number given to a single building."
+    dependent_thoroughfare:
+      type: VARCHAR
+      description: "Named thoroughfares within other named thoroughfares."
+    thoroughfare:
+      type: VARCHAR
+      description: "Road, track or named access route (e.g. HIGH STREET)."
+    double_dependent_locality:
+      type: VARCHAR
+      description: "Used to distinguish similar thoroughfares within a dependent locality."
+    dependent_locality:
+      type: VARCHAR
+      description: "Area within a post town."
+    post_town:
+      type: VARCHAR
+      description: "Town or city in which the Royal Mail sorting office is located."
+    postcode:
+      type: VARCHAR
+      description: "Abbreviated form of address (Outcode + Incode)."
+    postcode_type:
+      type: VARCHAR
+      description: "Describes the address as small (S) or large (L) user."
+    delivery_point_suffix:
+      type: VARCHAR
+      description: "Two-character code identifying an individual delivery point within a postcode."
+    welsh_dependent_thoroughfare:
+      type: VARCHAR
+      description: "Welsh translation of DEPENDENT_THOROUGHFARE."
+    welsh_thoroughfare:
+      type: VARCHAR
+      description: "Welsh translation of THOROUGHFARE."
+    welsh_double_dependent_locality:
+      type: VARCHAR
+      description: "Welsh translation of Double Dependent Locality."
+    welsh_dependent_locality:
+      type: VARCHAR
+      description: "Welsh translation of DEPENDENT_LOCALITY."
+    welsh_post_town:
+      type: VARCHAR
+      description: "Welsh translation of POST_TOWN."
+    po_box_number:
+      type: VARCHAR
+      description: "Post Office Box (PO Box) number."
+    process_date:
+      type: DATE
+      description: "The date on which the PAF record was processed into the database."
+    start_date:
+      type: DATE
+      description: "The date on which the address record was matched to the Delivery Point Address."
+    end_date:
+      type: DATE
+      description: "The date on which the PAF record no longer existed in the database."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the PAF record was first loaded by Geoplace."
+
+metadata:
+  description: "Record Identifier 29. Providing metadata information such as the gazetteer owner, scope and character sets."
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies the record as a Metadata Record (type 29)."
+    gaz_name:
+      type: VARCHAR
+      description: "Name of the Gazetteer."
+    gaz_scope:
+      type: VARCHAR
+      description: "Description of the content of the gazetteer."
+    ter_of_use:
+      type: VARCHAR
+      description: "Geographic domain of the gazetteer."
+    linked_data:
+      type: VARCHAR
+      description: "List of other datasets used to contribute to the creation of the product."
+    gaz_owner:
+      type: VARCHAR
+      description: "The organisation with overall responsibility for the gazetteer."
+    ngaz_freq:
+      type: VARCHAR
+      description: "The frequency with which the data is maintained and sent to the customer."
+    custodian_name:
+      type: VARCHAR
+      description: "Organisation or department responsible for maintenance."
+    custodian_uprn:
+      type: BIGINT
+      description: "UPRN of authority address custodian location."
+    local_custodian_code:
+      type: INTEGER
+      description: "Four-digit code identifying the gazetteer custodian."
+    co_ord_system:
+      type: VARCHAR
+      description: "Coordinate Reference System used."
+    co_ord_unit:
+      type: VARCHAR
+      description: "Unit of measurement of coordinates."
+    meta_date:
+      type: DATE
+      description: "Date metadata was last updated."
+    class_scheme:
+      type: VARCHAR
+      description: "Classification scheme(s) used."
+    gaz_date:
+      type: DATE
+      description: "Date at which the gazetteer can be considered to be current."
+    language:
+      type: VARCHAR
+      description: "Language used for the descriptors."
+    character_set:
+      type: VARCHAR
+      description: "The character set used in this gazetteer."
+
+successor:
+  description: "Record Identifier 30. Holds references to a UPRN and to any replacement UPRN."
+  primary_key: [succ_key]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as a Successor Cross Reference (type 30)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    succ_key:
+      type: VARCHAR
+      description: "Unique key for the successor cross reference record."
+    start_date:
+      type: DATE
+      description: "Date on which the record was first loaded into the database."
+    end_date:
+      type: DATE
+      description: "The date on which the record ceased to exist."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the UPRN attached to this record was entered into the Local Authority database."
+    successor:
+      type: BIGINT
+      description: "UPRN of successor BLPU."
+      foreign_key: blpu.uprn
+
+organisation:
+  description: "Record Identifier 31. Identifies the name of the current non-domestic occupier of the BLPU."
+  primary_key: [org_key]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this as an Organisation Record (type 31)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    org_key:
+      type: VARCHAR
+      description: "Unique key for the organisation record."
+    organisation:
+      type: VARCHAR
+      description: "Name of the organisation currently occupying the address record."
+    legal_name:
+      type: VARCHAR
+      description: "Registered legal name of the organisation."
+    start_date:
+      type: DATE
+      description: "Date on which the record was first loaded into the database."
+    end_date:
+      type: DATE
+      description: "The date on which the record ceased to exist."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the UPRN attached to this record was entered into the Local Authority database."
+
+classification:
+  description: "Record Identifier 32. Provides the code for the type of BLPU and the classification scheme."
+  primary_key: [class_key]
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies this record as a Classification Record (type 32)."
+    change_type:
+      type: VARCHAR
+      description: "Type of record change (I, U, D)."
+    pro_order:
+      type: BIGINT
+      description: "The order in which the records were processed."
+    uprn:
+      type: BIGINT
+      description: "UPRN - foreign key referencing the corresponding BLPU."
+      foreign_key: blpu.uprn
+    class_key:
+      type: VARCHAR
+      description: "Unique key for the classification record."
+    classification_code:
+      type: VARCHAR
+      description: "Code that describes the classification of the record."
+    class_scheme:
+      type: VARCHAR
+      description: "The name of the classification scheme used for this record."
+    scheme_version:
+      type: DOUBLE
+      description: "Version of the classification scheme."
+    start_date:
+      type: DATE
+      description: "Date on which this classification record was first loaded into the database."
+    end_date:
+      type: DATE
+      description: "Date this classification record ceased to exist."
+    last_update_date:
+      type: DATE
+      description: "The date on which any attribute on this record was last changed."
+    entry_date:
+      type: DATE
+      description: "The date on which the address record associated with this classification record was inserted."
+
+trailer:
+  description: "Record Identifier 99. Terminates the file and includes record counts."
+  columns:
+    record_identifier:
+      type: INTEGER
+      description: "Identifies the record as a Trailer Record (type 99)."
+    next_volume_number:
+      type: INTEGER
+      description: "The sequential number of the next volume in the transfer set."
+    record_count:
+      type: BIGINT
+      description: "Count of the number of records in the volume."
+    entry_date:
+      type: DATE
+      description: "The date of data entry."
+    time_stamp:
+      type: TIME
+      description: "Time of creation in HH:MM:SS format."
