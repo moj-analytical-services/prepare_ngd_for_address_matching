@@ -6,10 +6,16 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.0.0",
+    "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.0",
+    "rich>=13.7.0",
     "requests>=2.31.0",
 ]
+
+[project.scripts]
+ukam-ngd-build = "ngd_pipeline.cli:main"
+ukam-ngd-setup = "ngd_pipeline.setup_wizard:main"
 
 [project.optional-dependencies]
 dev = [

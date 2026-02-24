@@ -1,122 +1,111 @@
 # NGD Pipeline
 
-Transform NGD (National Geographic Database) data into a clean flatfile format suitable for use with [`uk_address_matcher`](https://github.com/moj-analytical-services/uk_address_matcher).
+Transform OS NGD (National Geographic Database) address data into parquet output suitable for `uk_address_matcher`.
 
-## Overview
+## Requirements
 
-This package downloads, extracts, and transforms [OS NGD](https://www.ordnancesurvey.co.uk/products/os-ngd-features) address data from the OS Data Hub into a single parquet file optimized for address matching with [uk_address_matcher](https://github.com/RobinL/uk_address_matcher).
+- Python `3.12+`
+- [`uv`](https://github.com/astral-sh/uv)
+- OS Data Hub package and version IDs
+- Network access to OS Downloads API
+- Credentials in `.env`:
+  - `OS_PROJECT_API_KEY`
+  - `OS_PROJECT_API_SECRET`
 
-NGD data is available to many government users under the [PSGA](https://www.ordnancesurvey.co.uk/customers/public-sector/public-sector-geospatial-agreement).
-
-The whole pipline is automated:
-- Set up your datapackage in the OS Data Hub, and update [the config](config.yaml) with the `package_id` and `version_id`
-- Provide your OS API key in the `.env` file (from https://osdatahub.os.uk/data/apis/projects -> your project)
-- Run [script.py](script.py)
-- The resultant parquet file(s) (default path `.data/output`) are now in the format required by `uk_address_matcher`.
-
-If you prefer to use AddressBase Premium, an equivalent repo is available [here](https://github.com/moj-analytical-services/prepare_addressbase_for_address_matching)
-
-## Quick Start
-
-### 1. Prerequisites
-
-- Create a datapackage on the OS Data Hub containing the NGD address data you need
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) package manager
-- OS Data Hub API key (get one at https://osdatahub.os.uk/) — only required for the download step
-
-### 2. Setup
+## Quick start
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd ngd-pipeline
-
-# Install dependencies
+git clone https://github.com/moj-analytical-services/prepare_ngd_for_address_matching.git
+cd prepare_ngd_for_address_matching
 uv sync
-
-# Create environment file with your API credentials
 cp .env.example .env
-# Edit .env and add your OS_PROJECT_API_KEY
 ```
 
-### 3. Configure
-
-Edit `config.yaml` to customize paths if needed (defaults work out of the box):
-
-```yaml
-paths:
-  work_dir: ./data
-  downloads_dir: ./data/downloads
-  extracted_dir: ./data/extracted
-  output_dir: ./data/output
-
-os_downloads:
-  package_id: "16331"
-  version_id: "103792"  # Update when new data is released
-
-processing:
-  # Number of chunks to split flatfile processing into
-  # Use higher values (e.g., 10) for lower memory usage on laptops
-  num_chunks: 1
-```
-
-### 4. Run
-
-The recommended way is to edit `script.py` and then run it:
+### 1) Generate config with the setup wizard
 
 ```bash
-# Edit script.py to configure which steps to run, then:
-uv run python script.py
+uv run ukam-ngd-setup --config-out config.yaml
 ```
 
-Or import and use the pipeline programmatically:
+This writes `config.yaml` and, by default, `.env` placeholders if `.env` does not already exist.
 
-```python
-from ngd_pipeline.pipeline import run
-from ngd_pipeline.settings import load_settings
+### 2) Add real credentials
 
-settings = load_settings("config.yaml")
+Edit `.env`:
 
-# Run individual steps
-run("download", settings)
-run("extract", settings)
-run("flatfile", settings)
-
-# Or run all steps at once
-run("all", settings)
+```dotenv
+OS_PROJECT_API_KEY=your_api_key_here
+OS_PROJECT_API_SECRET=your_api_secret_here
 ```
 
-## Pipeline Stages
-
-1. **Download** - Downloads NGD data from OS Data Hub
-2. **Extract** - Extracts zip files to CSV and converts to parquet
-3. **Flatfile** - Transforms into final address matching format with deduplication
-
-Each stage is **idempotent** - safe to re-run. Use `force=True` to overwrite existing outputs.
-
-## Smoke Tests
-
-Run the smoke tests (uses the CSV fixtures in [tests/data](tests/data)):
+### 3) Run the full pipeline
 
 ```bash
-uv run pytest tests/test_smoke.py
+uv run ukam-ngd-build --config config.yaml --step all
 ```
 
-To run only the flatfile-related smoke tests:
+<details>
+<summary>Configure manually</summary>
+
+If you prefer not to use the setup wizard, edit `config.yaml` directly.
+Set `os_downloads.package_id` and `os_downloads.version_id`, then adjust `paths` and `processing` as needed.
+
+</details>
+
+## CLI commands and key options
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `ukam-ngd-setup` | Create or update pipeline config interactively | `--config-out`, `--env-out`, `--overwrite-env`, `--non-interactive`, `--package-id`, `--version-id` |
+| `ukam-ngd-build` | Run pipeline stages (`download`, `extract`, `flatfile`, `all`) | `--config`, `--env-file`, `--step`, `--force`, `--list-only`, `--package-id`, `--version-id`, `--work-dir`, `--downloads-dir`, `--extracted-dir`, `--output-dir`, `--num-chunks`, `--duckdb-memory-limit`, `--parquet-compression`, `--parquet-compression-level`, `--verbose` |
+
+### Command notes
+
+- `--list-only` is only valid with `--step download`.
+- CLI overrides take precedence over values in `config.yaml`.
+- By default, `ukam-ngd-build` loads `.env` from the same directory as your config, unless `--env-file` is supplied.
+
+## Full-run examples
+
+### Example A: guided setup then full run
 
 ```bash
-uv run pytest tests/test_smoke.py -k "flatfile"
+uv run ukam-ngd-setup --config-out config.yaml
+uv run ukam-ngd-build --config config.yaml --step all
 ```
 
-## Output Format
+### Example B: non-interactive setup and tuned full run
 
-The final output is written to `data/output/` as one or more parquet files:
+```bash
+uv run ukam-ngd-setup \
+  --non-interactive \
+  --package-id 16331 \
+  --version-id <version_id> \
+  --config-out config.yaml
 
-- **Single chunk mode** (`num_chunks: 1`): `ngd_for_uk_address_matcher.chunk_001_of_001.parquet`
-- **Multi-chunk mode** (`num_chunks: N`): `ngd_for_uk_address_matcher.chunk_001_of_00N.parquet`, `chunk_002_of_00N.parquet`, etc.
+uv run ukam-ngd-build \
+  --config config.yaml \
+  --step all \
+  --num-chunks 20 \
+  --duckdb-memory-limit 8GB
+```
 
-Chunking reduces memory usage by processing UPRNs in batches. The union of all chunk files equals the single-chunk output. Use a higher `num_chunks` (e.g., 10) for laptops with limited RAM.
+## Pipeline stages
+
+1. `download` - fetch package metadata and zip files from OS Data Hub.
+2. `extract` - extract CSVs from downloaded zip files and convert to parquet.
+3. `flatfile` - transform and deduplicate into final output parquet file(s).
+
+All stages are idempotent. Use `--force` to regenerate outputs.
+
+## Output
+
+Final outputs are parquet files in `paths.output_dir`:
+
+- Single chunk: `ngd_for_uk_address_matcher.chunk_001_of_001.parquet`
+- Multi-chunk: `ngd_for_uk_address_matcher.chunk_001_of_00N.parquet`, `...chunk_00N_of_00N.parquet`
+
+Chunking reduces memory use by processing UPRNs in batches. The union of all chunk files equals the single-chunk output. Use a higher `num_chunks` (for example `10`) for laptops with limited RAM.
 
 Each file contains:
 
@@ -125,8 +114,8 @@ Each file contains:
 | `uprn` | BIGINT | Unique Property Reference Number |
 | `address_concat` | VARCHAR | Address string without postcode |
 | `postcode` | VARCHAR | UK postcode |
-| `filename` | VARCHAR | Source file name (e.g., `add_gb_builtaddress.parquet`) |
-| `classificationcode` | VARCHAR | Property classification code (e.g., RD06 for residential) |
+| `filename` | VARCHAR | Source file name (for example `add_gb_builtaddress.parquet`) |
+| `classificationcode` | VARCHAR | Property classification code (for example RD06 for residential) |
 | `parentuprn` | BIGINT | Parent UPRN for hierarchical addresses |
 | `rootuprn` | BIGINT | Root UPRN at the top of the hierarchy |
 | `hierarchylevel` | INTEGER | Level in the address hierarchy (1 = root) |
@@ -134,25 +123,14 @@ Each file contains:
 | `lowestfloorlevel` | DOUBLE | Lowest floor number |
 | `highestfloorlevel` | DOUBLE | Highest floor number |
 
-Example rows:
-
-```
-┌───────────┬─────────────────────────────────────────────────────┬──────────┬─────────────────────────────────┬────────────────────┬────────────┬───────────┬────────────────┬────────────┐
-│   uprn    │                    address_concat                   │ postcode │            filename             │ classificationcode │ parentuprn │ rootuprn  │ hierarchylevel │ floorlevel │
-├───────────┼─────────────────────────────────────────────────────┼──────────┼─────────────────────────────────┼────────────────────┼────────────┼───────────┼────────────────┼────────────┤
-│   6001491 │ 7, LARK ROW, LONDON                                 │ E2 9JA   │ add_gb_builtaddress.parquet     │ RD06               │       NULL │   6001491 │              1 │ NULL       │
-│   6004118 │ FLAT 9, BENSON HOUSE, LIGONIER STREET, LONDON       │ E2 7HH   │ add_gb_builtaddress.parquet     │ RD06               │    6130169 │   6130169 │              2 │ 4          │
-└───────────┴─────────────────────────────────────────────────────┴──────────┴─────────────────────────────────┴────────────────────┴────────────┴───────────┴────────────────┴────────────┘
-```
-
-Metadata columns (`classificationcode`, `parentuprn`, `rootuprn`, `hierarchylevel`, `floorlevel`, `lowestfloorlevel`, `highestfloorlevel`) are enriched via UPRN lookup from core address files. This means Royal Mail addresses and alternate address records receive metadata from their corresponding Built/Historic/Pre-Build address records.
+Metadata columns (`classificationcode`, `parentuprn`, `rootuprn`, `hierarchylevel`, `floorlevel`, `lowestfloorlevel`, `highestfloorlevel`) are enriched via UPRN lookup from core address files. This means Royal Mail addresses and alternate address records receive metadata from their corresponding Built/Historic/Pre-Build records.
 
 ## Data Sources
 
-The pipeline processes the following NGD address feature types:
+The pipeline processes these NGD address feature types:
 
 - **Built Address** (`add_gb_builtaddress`) - Current physical addresses
-- **Pre-Build Address** (`add_gb_prebuildaddress`) - Planned/future addresses
+- **Pre-Build Address** (`add_gb_prebuildaddress`) - Planned or future addresses
 - **Historic Address** (`add_gb_historicaddress`) - Historical addresses
 - **Non-Addressable Object** (`add_gb_nonaddressableobject`) - Excluded from output
 - **Royal Mail Address** (`add_gb_royalmailaddress`) - PAF delivery points
@@ -160,46 +138,49 @@ The pipeline processes the following NGD address feature types:
 
 Welsh language variants are extracted where available and appear as separate rows in the output.
 
-## Deduplication Logic
+## Deduplication
 
-When the same UPRN+address combination appears in multiple sources, records are deduplicated using these priority rules (applied internally during processing):
+When the same UPRN and address combination appears in multiple sources, records are deduplicated using these internal priority rules:
 
-**Feature Type Priority:**
+**Feature type priority:**
 1. Built Address (highest)
 2. Pre-Build Address
 3. Royal Mail Address
 4. Historic Address
 5. Non-Addressable Object (excluded)
 
-**Address Status Priority:**
+**Address status priority:**
 1. Approved (highest)
 2. Provisional
 3. Alternative
 4. Historical
 
-**Build Status Priority:**
+**Build status priority:**
 1. Built Complete (highest)
 2. Under Construction
 3. Prebuild
 4. Historic
 5. Demolished
 
-## Downloading Files Manually
+## Manual Download
 
 If you prefer to download manually:
-- Log into https://osdatahub.os.uk/
+- Sign in to https://osdatahub.os.uk/
 - Create a datapackage with NGD address features
 - Download the zip file
 
 To run the pipeline from a manual download:
 
-1. Place the zip in the downloads directory configured in [config.yaml](config.yaml)
+1. Place the zip in the downloads directory configured in `config.yaml`
    - By default this is `data/downloads/`
    - The extract step looks for `*.zip` files in this folder
 
 2. Run the pipeline starting from extract:
-   - In [script.py](script.py) set `STEP = ["extract", "flatfile"]`
-   - Then run: `uv run python script.py`
+
+```bash
+uv run ukam-ngd-build --config config.yaml --step extract
+uv run ukam-ngd-build --config config.yaml --step flatfile
+```
 
 ## OS Downloads API
 
@@ -209,9 +190,9 @@ To use the OS Downloads API:
 3. Find your datapackage ID and version ID from the OS Data Hub
 4. Update `config.yaml` with the package and version IDs
 
-### API Reference
+### API reference
 
-```
+```text
 Base URL: https://api.os.uk/downloads/v1
 Authentication: Header - key: OS_PROJECT_API_KEY
 
@@ -227,13 +208,35 @@ Authentication: Header - key: OS_PROJECT_API_KEY
    Use the url from downloads[] with ?key=YOUR_API_KEY appended
 ```
 
-## Related Projects
+## Config shape (`config.yaml`)
 
-- [uk_address_matcher](https://github.com/moj-analytical-services/uk_address_matcher) - Address matching library
-- [prepare_addressbase_for_address_matching](https://github.com/moj-analytical-services/prepare_addressbase_for_address_matching) - Companion repo for AddressBase Premium data
+```yaml
+paths:
+  work_dir: ./data
+  downloads_dir: ./data/downloads
+  extracted_dir: ./data/extracted
+  output_dir: ./data/output
 
-## Time taken
+os_downloads:
+  package_id: "<your_package_id>"
+  version_id: "<your_version_id>"
+  connect_timeout_seconds: 30
+  read_timeout_seconds: 300
 
-Assuming the raw .zip files are already downloaded, on a Macbook Pro M4:
-- Extracting: 2 mintes
-- Processing into output in 20 chunks: 2 minutes
+processing:
+  parquet_compression: zstd
+  parquet_compression_level: 9
+  num_chunks: 1
+  # duckdb_memory_limit: "8GB"
+```
+
+## Smoke test
+
+```bash
+uv run pytest tests/test_smoke.py
+```
+
+## Related projects
+
+- [uk_address_matcher](https://github.com/moj-analytical-services/uk_address_matcher)
+- [prepare_addressbase_for_address_matching](https://github.com/moj-analytical-services/prepare_addressbase_for_address_matching)

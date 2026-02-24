@@ -1,25 +1,25 @@
-"""Settings module for NGD Pipeline.
-
-Loads configuration from YAML file and environment variables.
-"""
-
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import duckdb
 import yaml
 from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class PathSettings:
+class StrictBaseModel(BaseModel):
+    """Base model for strict settings parsing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class PathSettings(StrictBaseModel):
     """Paths for data directories."""
 
     work_dir: Path
@@ -28,17 +28,40 @@ class PathSettings:
     output_dir: Path
 
 
-@dataclass
-class OSDownloadSettings:
+class OSDownloadSettings(StrictBaseModel):
     """OS Data Hub download configuration."""
 
     package_id: str
     version_id: str
-    api_key: str
+    api_key: SecretStr
+    api_secret: SecretStr
+    connect_timeout_seconds: int = 30
+    read_timeout_seconds: int = 300
+
+    @field_validator("package_id", "version_id")
+    @classmethod
+    def _validate_non_empty_str(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must be non-empty")
+        return stripped
+
+    @field_validator("api_key", "api_secret", mode="before")
+    @classmethod
+    def _validate_secret(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("must be non-empty")
+        return value
+
+    @field_validator("connect_timeout_seconds", "read_timeout_seconds")
+    @classmethod
+    def _validate_positive_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("must be > 0")
+        return value
 
 
-@dataclass
-class ProcessingSettings:
+class ProcessingSettings(StrictBaseModel):
     """Data processing configuration."""
 
     parquet_compression: str = "zstd"
@@ -46,9 +69,15 @@ class ProcessingSettings:
     duckdb_memory_limit: str | None = None
     num_chunks: int = 1
 
+    @field_validator("num_chunks")
+    @classmethod
+    def _validate_num_chunks(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        return value
 
-@dataclass
-class Settings:
+
+class Settings(StrictBaseModel):
     """Complete application settings."""
 
     paths: PathSettings
@@ -59,6 +88,17 @@ class Settings:
 
 class SettingsError(Exception):
     """Error loading or validating settings."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        validation_error: ValidationError | None = None,
+        config_path: Path | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.validation_error = validation_error
+        self.config_path = config_path
 
 
 def _resolve_path(base_dir: Path, path_str: str) -> Path:
@@ -83,20 +123,30 @@ def _load_yaml(config_path: Path) -> dict[str, Any]:
     return config
 
 
-def _validate_env_vars() -> str:
+def _validate_env_vars() -> tuple[str, str]:
     """Validate required environment variables exist."""
     api_key = os.environ.get("OS_PROJECT_API_KEY")
+    api_secret = os.environ.get("OS_PROJECT_API_SECRET")
 
     if not api_key:
         raise SettingsError(
             "OS_PROJECT_API_KEY not found in environment. "
             "Create a .env file with OS_PROJECT_API_KEY=<your-key>"
         )
+    if not api_secret:
+        raise SettingsError(
+            "OS_PROJECT_API_SECRET not found in environment. "
+            "Create a .env file with OS_PROJECT_API_SECRET=<your-secret>"
+        )
 
-    return api_key
+    return api_key, api_secret
 
 
-def load_settings(config_path: str | Path, load_env: bool = True) -> Settings:
+def load_settings(
+    config_path: str | Path,
+    load_env: bool = True,
+    env_path: str | Path | None = None,
+) -> Settings:
     """Load settings from YAML config file and environment variables.
 
     Args:
@@ -115,56 +165,57 @@ def load_settings(config_path: str | Path, load_env: bool = True) -> Settings:
 
     # Load .env file from the same directory as config
     if load_env:
-        env_path = base_dir / ".env"
-        load_dotenv(env_path)
-        if env_path.exists():
-            logger.debug("Loaded environment from %s", env_path)
+        env_file = Path(env_path).resolve() if env_path else (base_dir / ".env")
+        load_dotenv(env_file)
+        if env_file.exists():
+            logger.debug("Loaded environment from %s", env_file)
 
     # Load YAML config
     config = _load_yaml(config_path)
 
     # Validate environment variables
-    api_key = _validate_env_vars()
+    api_key, api_secret = _validate_env_vars()
 
-    # Build path settings
     paths_config = config.get("paths", {})
-    paths = PathSettings(
-        work_dir=_resolve_path(base_dir, paths_config.get("work_dir", "./data")),
-        downloads_dir=_resolve_path(
-            base_dir, paths_config.get("downloads_dir", "./data/downloads")
-        ),
-        extracted_dir=_resolve_path(
-            base_dir, paths_config.get("extracted_dir", "./data/extracted")
-        ),
-        output_dir=_resolve_path(base_dir, paths_config.get("output_dir", "./data/output")),
-    )
+    if not isinstance(paths_config, dict):
+        raise SettingsError("paths must be a mapping in config.yaml")
 
-    # Build OS download settings
+    work_dir_raw = str(paths_config.get("work_dir", "./data"))
+    downloads_dir_raw = str(paths_config.get("downloads_dir", Path(work_dir_raw) / "downloads"))
+    extracted_dir_raw = str(paths_config.get("extracted_dir", Path(work_dir_raw) / "extracted"))
+    output_dir_raw = str(paths_config.get("output_dir", Path(work_dir_raw) / "output"))
+
+    resolved_paths = {
+        "work_dir": _resolve_path(base_dir, work_dir_raw),
+        "downloads_dir": _resolve_path(base_dir, downloads_dir_raw),
+        "extracted_dir": _resolve_path(base_dir, extracted_dir_raw),
+        "output_dir": _resolve_path(base_dir, output_dir_raw),
+    }
+
     os_config = config.get("os_downloads", {})
-    os_downloads = OSDownloadSettings(
-        package_id=os_config.get("package_id", "16331"),
-        version_id=os_config.get("version_id", "103792"),
-        api_key=api_key,
-    )
+    if not isinstance(os_config, dict):
+        raise SettingsError("os_downloads must be a mapping in config.yaml")
 
-    # Build processing settings
-    proc_config = config.get("processing", {})
-    num_chunks = proc_config.get("num_chunks", 1)
-    if num_chunks < 1:
-        raise SettingsError(f"processing.num_chunks must be >= 1, got {num_chunks}")
-    processing = ProcessingSettings(
-        parquet_compression=proc_config.get("parquet_compression", "zstd"),
-        parquet_compression_level=proc_config.get("parquet_compression_level", 9),
-        duckdb_memory_limit=proc_config.get("duckdb_memory_limit"),
-        num_chunks=num_chunks,
-    )
+    settings_payload = {
+        **config,
+        "paths": resolved_paths,
+        "os_downloads": {
+            **os_config,
+            "api_key": api_key,
+            "api_secret": api_secret,
+        },
+        "processing": config.get("processing", {}),
+        "config_path": config_path,
+    }
 
-    return Settings(
-        paths=paths,
-        os_downloads=os_downloads,
-        processing=processing,
-        config_path=config_path,
-    )
+    try:
+        return Settings.model_validate(settings_payload)
+    except ValidationError as exc:
+        raise SettingsError(
+            "Invalid configuration",
+            validation_error=exc,
+            config_path=config_path,
+        ) from exc
 
 
 def create_duckdb_connection(settings: Settings) -> duckdb.DuckDBPyConnection:
