@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from ngd_pipeline.cli_errors import format_pydantic_validation_error
-from ngd_pipeline.settings import Settings
+from ukam_os_builder.api.cli_errors import format_pydantic_validation_error
+from ukam_os_builder.api.settings import Settings
 
 
 def test_format_pydantic_validation_error_includes_yaml_snippet_for_missing_fields() -> None:

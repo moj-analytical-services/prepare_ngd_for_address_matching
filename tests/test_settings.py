@@ -6,7 +6,7 @@ from textwrap import dedent
 import pytest
 from pydantic import ValidationError
 
-from ngd_pipeline.settings import SettingsError, load_settings
+from ukam_os_builder.api.settings import SettingsError, load_settings
 
 
 def _write_config(path: Path, content: str) -> None:
@@ -127,6 +127,7 @@ def test_load_settings_uses_work_dir_for_default_subpaths(
     assert settings.paths.work_dir == (tmp_path / "custom_data").resolve()
     assert settings.paths.downloads_dir == (tmp_path / "custom_data/downloads").resolve()
     assert settings.paths.extracted_dir == (tmp_path / "custom_data/extracted").resolve()
+    assert settings.paths.parquet_dir == (tmp_path / "custom_data/parquet").resolve()
     assert settings.paths.output_dir == (tmp_path / "custom_data/output").resolve()
 
 
@@ -182,3 +183,25 @@ def test_load_settings_validates_positive_read_timeout(
 
     assert exc_info.value.validation_error is not None
     assert "read_timeout_seconds" in str(exc_info.value.validation_error)
+
+
+def test_load_settings_defaults_source_and_num_chunks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("OS_PROJECT_API_KEY", "key")
+    monkeypatch.setenv("OS_PROJECT_API_SECRET", "secret")
+
+    config_path = tmp_path / "config.yaml"
+    _write_config(
+        config_path,
+        """
+        os_downloads:
+          package_id: "16465"
+          version_id: "104444"
+        """,
+    )
+
+    settings = load_settings(config_path, load_env=False)
+
+    assert settings.source.type == "ngd"
+    assert settings.processing.num_chunks == 20

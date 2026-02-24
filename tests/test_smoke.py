@@ -1,9 +1,3 @@
-"""Smoke tests for NGD Pipeline.
-
-These tests run the pipeline on real NGD sample data to verify
-the basic functionality without downloading the full dataset.
-"""
-
 from __future__ import annotations
 
 import tempfile
@@ -13,15 +7,15 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from ngd_pipeline.extract import convert_csv_to_parquet
-from ngd_pipeline.settings import (
+from ukam_os_builder.api.settings import (
     OSDownloadSettings,
     PathSettings,
     ProcessingSettings,
     Settings,
     create_duckdb_connection,
 )
-from ngd_pipeline.to_flatfile import run_flatfile_step
+from ukam_os_builder.data_sources.ngd.to_flatfile import run_flatfile_step
+from ukam_os_builder.os_builder.extract import convert_csv_to_parquet
 
 # Path to sample data (real NGD data from a small area)
 SAMPLE_DATA_DIR = Path(__file__).parent / "data"
