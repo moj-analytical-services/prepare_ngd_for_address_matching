@@ -1,6 +1,6 @@
 [project]
 name = "ukam-ngd-pipeline"
-version = "0.1.0"
+version = "0.1.0.dev1"
 description = "Download, process and transform NGD (National Geographic Database) data for UK address matching"
 readme = "README.md"
 requires-python = ">=3.12"
