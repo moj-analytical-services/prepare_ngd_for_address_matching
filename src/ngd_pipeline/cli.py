@@ -1,16 +1,18 @@
-"""Command-line interface for NGD pipeline."""
-
 from __future__ import annotations
 
 import argparse
 import logging
 from pathlib import Path
 
+from rich.console import Console
+
+from ngd_pipeline.cli_errors import format_settings_error, render_config_error_panel
 from ngd_pipeline.os_downloads import get_package_version
 from ngd_pipeline.pipeline import run
 from ngd_pipeline.settings import Settings, SettingsError, load_settings
 
 logger = logging.getLogger(__name__)
+console = Console()
 
 
 def _configure_logging(verbose: bool) -> None:
@@ -127,15 +129,20 @@ def main(argv: list[str] | None = None) -> int:
     _configure_logging(args.verbose)
 
     try:
-        settings = load_settings(args.config, load_env=True, env_path=args.env_file)
+        console.rule("[bold cyan]NGD Builder[/bold cyan]")
+        config_path = Path(args.config).resolve()
+        settings = load_settings(config_path, load_env=True, env_path=args.env_file)
         _apply_overrides(settings, args)
 
-        logger.info("Loaded config from %s", Path(args.config).resolve())
+        logger.info("Loaded config from %s", config_path)
+        console.print(f"[green]✓[/green] Loaded config: [bold]{config_path}[/bold]")
+        console.print(f"[cyan]Step:[/cyan] {args.step}")
 
-        # Always require a live API call and valid credentials before any step.
-        logger.info("Running OS API auth/connectivity preflight...")
+        logger.info("Running OS API auth/connectivity check...")
+        console.print("[cyan]Checking OS API credentials and connectivity...[/cyan]")
         get_package_version(settings)
-        logger.info("Preflight check passed")
+        logger.info("API connectivity check passed")
+        console.print("[green]✓[/green] API connectivity check passed")
 
         run(
             step=args.step,
@@ -143,11 +150,21 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             list_only=args.list_only,
         )
+        console.print("[bold green]Build completed successfully[/bold green]")
         return 0
     except (SettingsError, ValueError) as exc:
-        logger.error("Configuration error: %s", exc)
+        if isinstance(exc, SettingsError):
+            error_config_path = exc.config_path or Path(args.config).resolve()
+            message = format_settings_error(exc, config_path=error_config_path)
+        else:
+            message = str(exc)
+        console.print(render_config_error_panel(message))
+        logger.error("Configuration error")
+        if args.verbose:
+            logger.error("Configuration details: %s", message)
         return 2
     except Exception as exc:  # noqa: BLE001
+        console.print(f"[bold red]Pipeline failed:[/bold red] {exc}")
         logger.exception("Pipeline failed: %s", exc)
         return 1
 

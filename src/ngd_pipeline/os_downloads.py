@@ -67,13 +67,20 @@ def get_package_version(settings: Settings) -> dict:
     """
     package_id = settings.os_downloads.package_id
     version_id = settings.os_downloads.version_id
-    api_key = settings.os_downloads.api_key
+    api_key = settings.os_downloads.api_key.get_secret_value()
 
     url = f"{API_BASE_URL}/dataPackages/{package_id}/versions/{version_id}"
     headers = {"key": api_key}
 
     logger.debug("Fetching package metadata from %s", url)
-    response = requests.get(url, headers=headers, timeout=30)
+    response = requests.get(
+        url,
+        headers=headers,
+        timeout=(
+            settings.os_downloads.connect_timeout_seconds,
+            settings.os_downloads.read_timeout_seconds,
+        ),
+    )
     response.raise_for_status()
 
     return response.json()
@@ -160,6 +167,8 @@ def download_file(
     expected_md5: str | None = None,
     force: bool = False,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
+    connect_timeout_seconds: int = 30,
+    read_timeout_seconds: int = 300,
     session: requests.Session | None = None,
 ) -> bool:
     """Download a file with streaming and checksum verification.
@@ -202,7 +211,11 @@ def download_file(
     logger.info("Downloading %s...", dest_path.name)
 
     sess = session or requests.Session()
-    response = sess.get(download_url, stream=True, timeout=(30, 300))
+    response = sess.get(
+        download_url,
+        stream=True,
+        timeout=(connect_timeout_seconds, read_timeout_seconds),
+    )
     try:
         response.raise_for_status()
 
@@ -268,7 +281,7 @@ def run_download_step(
         requests.HTTPError: If API requests fail.
     """
     downloads_dir = settings.paths.downloads_dir
-    api_key = settings.os_downloads.api_key
+    api_key = settings.os_downloads.api_key.get_secret_value()
 
     # Fetch package metadata
     logger.info("Fetching package metadata...")
@@ -284,24 +297,32 @@ def run_download_step(
     # Ensure downloads directory exists
     downloads_dir.mkdir(parents=True, exist_ok=True)
 
+    session = requests.Session()
+
     # Download each file
     downloaded: list[Path] = []
-    for item in items:
-        if not item.url:
-            logger.warning("No URL for %s, skipping", item.filename)
-            continue
+    try:
+        for item in items:
+            if not item.url:
+                logger.warning("No URL for %s, skipping", item.filename)
+                continue
 
-        dest_path = downloads_dir / item.filename
-        was_downloaded = download_file(
-            url=item.url,
-            dest_path=dest_path,
-            api_key=api_key,
-            expected_md5=item.md5,
-            force=force,
-        )
+            dest_path = downloads_dir / item.filename
+            was_downloaded = download_file(
+                url=item.url,
+                dest_path=dest_path,
+                api_key=api_key,
+                expected_md5=item.md5,
+                force=force,
+                connect_timeout_seconds=settings.os_downloads.connect_timeout_seconds,
+                read_timeout_seconds=settings.os_downloads.read_timeout_seconds,
+                session=session,
+            )
 
-        if was_downloaded or dest_path.exists():
-            downloaded.append(dest_path)
+            if was_downloaded or dest_path.exists():
+                downloaded.append(dest_path)
+    finally:
+        session.close()
 
     logger.info("Download complete: %d file(s)", len(downloaded))
     return downloaded
