@@ -127,7 +127,7 @@ Set `source.type`, `os_downloads.package_id`, and `os_downloads.version_id`, the
 
 ### Command notes
 
-- `--list-only` is only valid with `--step download` or `--step all`.
+- `step` only supports `download` and `all` to simplify usage. Use `--overwrite` to re-run a step with the same parameters.
 - CLI overrides take precedence over values in `config.yaml`.
 - By default, `ukam-os-build` loads `.env` from the same directory as your config, unless `--env-file` is supplied.
 
@@ -268,25 +268,6 @@ When the same UPRN and address combination appears in multiple sources, records 
 4. Historic
 5. Demolished
 
-## Manual Download
-
-If you prefer to download manually:
-- Sign in to https://osdatahub.os.uk/
-- Create a datapackage with NGD address features
-- Download the zip file
-
-To run the pipeline from a manual download:
-
-1. Place the zip in the downloads directory configured in `config.yaml`
-   - By default this is `data/downloads/`
-   - The extract step looks for `*.zip` files in this folder
-
-2. Run the pipeline starting from extract:
-
-```bash
-ukam-os-build --config config.yaml --step extract
-ukam-os-build --config config.yaml --step flatfile
-```
 
 ## OS Downloads API
 
