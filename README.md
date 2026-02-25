@@ -114,7 +114,13 @@ result = inspect_flatfile_variants(config_path="config.yaml", top_offset=0, show
 <summary>Configure manually</summary>
 
 If you prefer not to use the setup wizard, edit `config.yaml` directly.
-Set `source.type`, `os_downloads.package_id`, and `os_downloads.version_id`, then adjust `paths` and `processing` as needed.
+Set `source.type`, `os_downloads.package_id`, and `os_downloads.version_id`.
+
+Most users only need one path setting:
+
+- `paths.work_dir` (default `./data`, relative to the config file directory)
+
+The tool derives all other directories automatically under `work_dir`.
 
 </details>
 
@@ -303,10 +309,6 @@ source:
 
 paths:
   work_dir: ./data
-  downloads_dir: ./data/downloads
-  extracted_dir: ./data/extracted
-  parquet_dir: ./data/parquet
-  output_dir: ./data/output
 
 os_downloads:
   package_id: "<your_package_id>"
@@ -320,6 +322,34 @@ processing:
   num_chunks: 20
   # duckdb_memory_limit: "8GB"
 ```
+
+By default, the tool creates these directories under `paths.work_dir`:
+
+- downloads: `<work_dir>/downloads`
+- extracted: `<work_dir>/extracted`
+- parquet: `<work_dir>/parquet`
+- output: `<work_dir>/output`
+
+<details>
+<summary>Advanced: override default directories</summary>
+
+Most users won’t need this.
+
+If you need to customize locations, use `paths.overrides`:
+
+```yaml
+paths:
+  work_dir: ./data
+  overrides:
+    downloads_dir: ./somewhere/downloads
+    extracted_dir: /mnt/fast/extracted
+    parquet_dir: ./data/parquet
+    output_dir: ./output
+```
+
+Override keys replace derived defaults. Relative paths are resolved relative to the directory containing `config.yaml`.
+
+</details>
 
 ## Smoke test
 
