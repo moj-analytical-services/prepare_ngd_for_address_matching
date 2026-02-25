@@ -134,7 +134,9 @@ def run_pipeline(
         step_runners["download"](settings, force, True)
         return
 
-    run_order = valid_steps if step == "all" else [step]
+    run_order = (
+        [pipeline_step.name for pipeline_step in definition.steps] if step == "all" else [step]
+    )
     for step_name in run_order:
         if force:
             _clean_outputs_for_step(
