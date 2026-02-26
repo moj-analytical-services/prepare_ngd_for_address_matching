@@ -8,6 +8,7 @@ from typing import Any, Literal
 import yaml
 
 from ukam_os_builder.api.settings import Settings, SettingsError, load_settings
+from ukam_os_builder.os_builder.manifest import generate_manifest_file
 from ukam_os_builder.os_builder.os_hub import get_package_version
 from ukam_os_builder.pipeline import run as run_pipeline
 from ukam_os_builder.pipeline import supported_steps_for_source
@@ -333,10 +334,6 @@ def run_from_config(
         parquet_compression_level=parquet_compression_level,
     )
     logger.info("Resolved work_dir: %s", settings.paths.work_dir)
-    logger.info("Resolved downloads_dir: %s", settings.paths.downloads_dir)
-    logger.info("Resolved extracted_dir: %s", settings.paths.extracted_dir)
-    logger.info("Resolved parquet_dir: %s", settings.paths.parquet_dir)
-    logger.info("Resolved output_dir: %s", settings.paths.output_dir)
 
     source_type = settings.source.type
     if step != "all":
@@ -352,4 +349,7 @@ def run_from_config(
 
     overwrite_effective = overwrite if overwrite is not None else bool(force)
     run_pipeline(step=step, settings=settings, force=overwrite_effective, list_only=list_only)
+    generate_manifest_file(
+        settings=settings, manifest_path=settings.paths.work_dir / "manifest.json"
+    )
     return settings
