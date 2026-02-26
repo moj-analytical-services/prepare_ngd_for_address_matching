@@ -7,7 +7,7 @@ This project transforms NGD (National Geographic Database) data into a clean fla
 ## Repository Structure
 
 ```
-├── config.yaml         # Pipeline configuration
+├── config.example.yaml # Pipeline configuration template (copy to config.yaml)
 ├── script.py           # Main entry point
 ├── pyproject.toml      # Project metadata and dependencies
 ├── README.md           # User documentation
