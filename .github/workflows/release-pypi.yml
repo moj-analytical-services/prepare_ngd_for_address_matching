@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: pypi
 
     # Set up such that PyPI Trusted Publishing (OIDC) can work.
     permissions:
