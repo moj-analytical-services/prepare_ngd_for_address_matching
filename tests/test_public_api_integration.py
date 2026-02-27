@@ -71,7 +71,7 @@ def test_package_root_inspect_flatfile_variants(tmp_path: Path) -> None:
                     (4001::BIGINT, 'A'::VARCHAR),
                     (4001::BIGINT, 'B'::VARCHAR),
                     (4002::BIGINT, 'C'::VARCHAR)
-            ) AS t(uprn, address_concat)
+            ) AS t(unique_id, address_concat)
         ) TO '{parquet_path.as_posix()}' (FORMAT PARQUET)
         """
     )

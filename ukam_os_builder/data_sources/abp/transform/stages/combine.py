@@ -62,7 +62,7 @@ def combine_and_dedupe(con: duckdb.DuckDBPyConnection) -> duckdb.DuckDBPyRelatio
             FROM deduped_filtered
         )
         SELECT
-            sr.uprn,
+            sr.uprn AS unique_id,
             sr.postcode,
             sr.address_concat,
             cb.classification_code,

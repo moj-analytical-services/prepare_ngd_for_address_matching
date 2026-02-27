@@ -26,7 +26,7 @@ def test_inspect_flatfile_variants_uses_config_defaults(tmp_path: Path) -> None:
                     (1001::BIGINT, 'A'::VARCHAR),
                     (1001::BIGINT, 'B'::VARCHAR),
                     (1002::BIGINT, 'C'::VARCHAR)
-            ) AS t(uprn, address_concat)
+            ) AS t(unique_id, address_concat)
         ) TO '{parquet_path.as_posix()}' (FORMAT PARQUET)
         """
     )
@@ -61,7 +61,7 @@ def test_inspect_flatfile_variants_supports_abp_pattern(tmp_path: Path) -> None:
                     (2001::BIGINT, 'A'::VARCHAR),
                     (2002::BIGINT, 'B'::VARCHAR),
                     (2002::BIGINT, 'C'::VARCHAR)
-            ) AS t(uprn, address_concat)
+            ) AS t(unique_id, address_concat)
         ) TO '{parquet_path.as_posix()}' (FORMAT PARQUET)
         """
     )

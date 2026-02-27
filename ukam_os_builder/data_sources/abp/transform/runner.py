@@ -170,7 +170,7 @@ def _transform_to_flatfile_chunk(
     logger.debug("Combination and deduplication in %.2f seconds", perf_counter() - t0)
 
     # Get chunk metrics
-    chunk_metrics = con.execute("SELECT COUNT(DISTINCT uprn), COUNT(*) FROM result").fetchone()
+    chunk_metrics = con.execute("SELECT COUNT(DISTINCT unique_id), COUNT(*) FROM result").fetchone()
     chunk_uprns = chunk_metrics[0]
     chunk_rows = chunk_metrics[1]
 
@@ -244,7 +244,7 @@ def transform_to_flatfile(
         con = create_duckdb_connection(settings)
         output_path = output_paths[0]
         stats = con.execute(f"""
-            SELECT COUNT(DISTINCT uprn), COUNT(*)
+            SELECT COUNT(DISTINCT unique_id), COUNT(*)
             FROM read_parquet('{output_path.as_posix()}')
         """).fetchone()
         total_uprns = stats[0]

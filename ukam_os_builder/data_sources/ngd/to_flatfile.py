@@ -523,7 +523,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
           WHERE feature_type NOT IN ('Non-Addressable Object')
         )
         SELECT
-          uprn,
+          uprn AS unique_id,
           address_concat,
           postcode,
           filename,

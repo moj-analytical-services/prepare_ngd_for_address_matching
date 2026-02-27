@@ -12,7 +12,7 @@ SourceType = Literal["ngd", "abp"]
 logger = logging.getLogger(__name__)
 
 _DEFAULT_SELECT_COLUMNS = [
-    "uprn",
+    "unique_id",
     "address_concat",
     "postcode",
     "source",
@@ -128,9 +128,9 @@ def get_variant_statistics(
 
     stats = con.sql(f"""
         WITH variant_counts AS (
-            SELECT uprn, COUNT(*) AS variant_count
+            SELECT unique_id, COUNT(*) AS variant_count
             FROM read_parquet('{files_sql}')
-            GROUP BY uprn
+            GROUP BY unique_id
         )
         SELECT
             COUNT(*) AS total_uprns,
@@ -179,7 +179,7 @@ def get_random_uprn(
 
     select_columns = _choose_select_columns(con, files_sql, columns)
     random_uprn = con.sql(f"""
-        SELECT DISTINCT uprn
+        SELECT DISTINCT unique_id
         FROM read_parquet('{files_sql}')
         ORDER BY RANDOM()
         LIMIT 1
@@ -192,7 +192,7 @@ def get_random_uprn(
         SELECT
             {select_columns}
         FROM read_parquet('{files_sql}')
-        WHERE uprn = {int(random_uprn[0])}
+        WHERE unique_id = {int(random_uprn[0])}
         ORDER BY is_primary DESC NULLS LAST, source NULLS LAST, variant_label NULLS LAST
     """)
 
@@ -220,14 +220,14 @@ def get_random_large_uprn(
 
     selected = con.sql(f"""
         WITH variant_counts AS (
-            SELECT uprn, COUNT(*) AS variant_count
+            SELECT unique_id, COUNT(*) AS variant_count
             FROM read_parquet('{files_sql}')
             {where_filter}
-            GROUP BY uprn
-            ORDER BY variant_count DESC, uprn ASC
+            GROUP BY unique_id
+            ORDER BY variant_count DESC, unique_id ASC
             LIMIT {int(top_n)}
         )
-        SELECT uprn
+        SELECT unique_id
         FROM variant_counts
         ORDER BY RANDOM()
         LIMIT 1
@@ -240,7 +240,7 @@ def get_random_large_uprn(
         SELECT
             {select_columns}
         FROM read_parquet('{files_sql}')
-        WHERE uprn = {int(selected[0])}
+        WHERE unique_id = {int(selected[0])}
         {and_filter}
         ORDER BY is_primary DESC NULLS LAST, source NULLS LAST, variant_label NULLS LAST
     """)
@@ -269,7 +269,7 @@ def get_uprn_variants(
         SELECT
             {select_columns}
         FROM read_parquet('{files_sql}')
-        WHERE uprn = {int(uprn)}
+        WHERE unique_id = {int(uprn)}
         {and_filter}
         ORDER BY is_primary DESC NULLS LAST, source NULLS LAST, variant_label NULLS LAST
     """)
@@ -317,10 +317,10 @@ def inspect_flatfile_variants(
             WITH data AS (
                 SELECT * FROM read_parquet('{files_sql}')
             )
-            SELECT uprn, COUNT(*) AS variant_count
+            SELECT unique_id, COUNT(*) AS variant_count
             FROM data
-            GROUP BY uprn
-            ORDER BY variant_count DESC, uprn ASC
+            GROUP BY unique_id
+            ORDER BY variant_count DESC, unique_id ASC
             LIMIT 1 OFFSET {top_offset}
             """
         ).fetchone()
@@ -333,7 +333,7 @@ def inspect_flatfile_variants(
             f"""
             SELECT COUNT(*)
             FROM read_parquet('{files_sql}')
-            WHERE uprn = ?
+            WHERE unique_id = ?
             """,
             [target_uprn],
         ).fetchone()
@@ -343,7 +343,7 @@ def inspect_flatfile_variants(
         f"""
         SELECT *
         FROM read_parquet('{files_sql}')
-        WHERE uprn = ?
+        WHERE unique_id = ?
         ORDER BY 1
         """,
         [target_uprn],
@@ -358,7 +358,7 @@ def inspect_flatfile_variants(
             max_width=10_000
         )
         logger.info("Selected UPRN rows:")
-        con.sql(f"SELECT * FROM read_parquet('{files_sql}') WHERE uprn = {target_uprn}").show(
+        con.sql(f"SELECT * FROM read_parquet('{files_sql}') WHERE unique_id = {target_uprn}").show(
             max_width=10_000
         )
 

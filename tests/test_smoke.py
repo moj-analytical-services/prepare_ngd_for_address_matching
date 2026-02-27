@@ -172,7 +172,7 @@ def test_flatfile_single_chunk(temp_settings: Settings) -> None:
     column_names = [row[0] for row in schema]
 
     expected_columns = [
-        "uprn",
+        "unique_id",
         "address_concat",
         "postcode",
         "filename",
@@ -231,9 +231,9 @@ def test_deduplication(temp_settings: Settings) -> None:
     # Verify no exact duplicates
     con = duckdb.connect()
     result = con.execute(f"""
-        SELECT uprn, address_concat, COUNT(*) as cnt
+        SELECT unique_id, address_concat, COUNT(*) as cnt
         FROM read_parquet('{output_files[0].as_posix()}')
-        GROUP BY uprn, address_concat
+        GROUP BY unique_id, address_concat
         HAVING COUNT(*) > 1
     """).fetchall()
 
