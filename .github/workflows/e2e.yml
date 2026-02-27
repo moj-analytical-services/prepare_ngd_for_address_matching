@@ -94,3 +94,61 @@ jobs:
                   con = duckdb.connect()
                   con.sql(\"SELECT * FROM read_parquet('data/output/*.parquet')\").show(max_rows=1, max_width=10000)
                   "
+
+            # ── Second run: offline (no API credentials) ──────────────
+            - name: Record download file timestamps
+              run: |
+                  stat -c '%n %Y' data/downloads/* | sort > /tmp/downloads_before.txt
+                  echo "=== Download file timestamps ==="
+                  cat /tmp/downloads_before.txt
+
+            - name: Remove everything except downloads and block API access
+              run: |
+                  find data -mindepth 1 -maxdepth 1 ! -name downloads -exec rm -rf {} +
+                  echo "=== Remaining data tree ==="
+                  find data -type f | sort
+                  # Ensure no credentials exist anywhere
+                  unset OS_PROJECT_API_KEY OS_PROJECT_API_SECRET
+                  rm -f .env
+                  # Block the OS API at the network level so download is impossible
+                  echo "Blocking api.os.uk via /etc/hosts..."
+                  echo "127.0.0.1 api.os.uk" | sudo tee -a /etc/hosts
+
+            - name: Re-run pipeline without API credentials
+              env:
+                  OS_PROJECT_API_KEY: ""
+                  OS_PROJECT_API_SECRET: ""
+              run: uv run ukam-os-build --verbose --overwrite
+
+            - name: Verify output files exist (offline run)
+              run: |
+                  echo "=== Output directory ==="
+                  ls -lhR data/output/
+                  echo ""
+                  echo "=== Checking for parquet files ==="
+                  count=$(find data/output -name '*.parquet' | wc -l)
+                  echo "Found $count parquet file(s) in data/output/"
+                  if [ "$count" -eq 0 ]; then
+                    echo "::error::No parquet output files found on offline run!"
+                    exit 1
+                  fi
+
+            - name: Preview first output row (offline run)
+              run: |
+                  uv run python -c "
+                  import duckdb
+                  con = duckdb.connect()
+                  con.sql(\"SELECT * FROM read_parquet('data/output/*.parquet')\").show(max_rows=1, max_width=10000)
+                  "
+
+            - name: Verify downloads were not modified
+              run: |
+                  stat -c '%n %Y' data/downloads/* | sort > /tmp/downloads_after.txt
+                  echo "=== Download file timestamps after offline run ==="
+                  cat /tmp/downloads_after.txt
+                  if ! diff -q /tmp/downloads_before.txt /tmp/downloads_after.txt; then
+                    echo "::error::Download file timestamps changed – files were unexpectedly modified!"
+                    diff /tmp/downloads_before.txt /tmp/downloads_after.txt
+                    exit 1
+                  fi
+                  echo "Download timestamps unchanged – existing archives were reused as expected."
