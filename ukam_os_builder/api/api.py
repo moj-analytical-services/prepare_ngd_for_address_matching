@@ -8,7 +8,7 @@ from typing import Any, Literal
 import yaml
 
 from ukam_os_builder.api.settings import Settings, SettingsError, load_settings
-from ukam_os_builder.os_builder.os_hub import get_package_version
+from ukam_os_builder.os_builder.os_hub import _get_manifest_path, get_package_version
 from ukam_os_builder.pipeline import run as run_pipeline
 from ukam_os_builder.pipeline import supported_steps_for_source
 
@@ -333,11 +333,6 @@ def run_from_config(
         parquet_compression_level=parquet_compression_level,
     )
     logger.info("Resolved work_dir: %s", settings.paths.work_dir)
-    logger.info("Resolved downloads_dir: %s", settings.paths.downloads_dir)
-    logger.info("Resolved extracted_dir: %s", settings.paths.extracted_dir)
-    logger.info("Resolved parquet_dir: %s", settings.paths.parquet_dir)
-    logger.info("Resolved output_dir: %s", settings.paths.output_dir)
-
     source_type = settings.source.type
     if step != "all":
         supported_steps = supported_steps_for_source(source_type)
@@ -353,4 +348,18 @@ def run_from_config(
 
     overwrite_effective = overwrite if overwrite is not None else bool(force)
     run_pipeline(step=step, settings=settings, force=overwrite_effective, list_only=list_only)
+
+    logger.info(
+        "✅ Pipeline run completed\n\n"
+        "Where you need to look:\n"
+        "  • downloads_dir (raw OS Hub extracts): %s%s\n"
+        "  • output_dir (final files for address matcher): %s%s\n",
+        str(settings.paths.downloads_dir),
+        "",
+        str(settings.paths.output_dir),
+        "",
+    )
+
+    _get_manifest_path(settings)
+
     return settings

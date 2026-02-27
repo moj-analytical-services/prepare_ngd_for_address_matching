@@ -145,7 +145,6 @@ def main(argv: list[str] | None = None) -> int:
             parquet_compression=args.parquet_compression,
             parquet_compression_level=args.parquet_compression_level,
         )
-        logger.info("Pipeline run completed")
         console.print("[bold green]Build completed successfully[/bold green]")
         return 0
     except (SettingsError, ValueError) as exc:
