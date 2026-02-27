@@ -115,10 +115,9 @@ jobs:
                   echo "127.0.0.1 api.os.uk" | sudo tee -a /etc/hosts
 
             - name: Re-run pipeline without API credentials
-              env:
-                  OS_PROJECT_API_KEY: ""
-                  OS_PROJECT_API_SECRET: ""
-              run: uv run ukam-os-build --verbose --overwrite
+              run: |
+                  unset OS_PROJECT_API_KEY OS_PROJECT_API_SECRET
+                  uv run ukam-os-build --verbose --overwrite
 
             - name: Verify output files exist (offline run)
               run: |
