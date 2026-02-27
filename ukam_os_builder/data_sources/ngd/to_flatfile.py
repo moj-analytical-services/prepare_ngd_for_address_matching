@@ -413,11 +413,76 @@ def _enrich_with_metadata(con: duckdb.DuckDBPyConnection) -> None:
     con.execute(sql)
 
 
+def _create_custom_level_rows(con: duckdb.DuckDBPyConnection) -> None:
+    """Generate custom level-based address variants and insert into enriched table.
+
+    Parses the ``floorlevel`` column (VARCHAR) from the enriched address table,
+    maps integer floor levels to words (-1=BASEMENT … 6=SIXTH), and prepends the
+    word to the existing ``address_concat`` to create additional address variants.
+
+    These rows use ``feature_type='Custom Level'`` so they receive the lowest
+    dedup priority and never override official address data.
+    """
+    sql = """
+        INSERT INTO all_full_addresses_enriched
+        WITH level_parsed AS (
+            SELECT
+                uprn, address_concat, postcode, filename,
+                classificationcode, parentuprn, rootuprn,
+                hierarchylevel, floorlevel, lowestfloorlevel, highestfloorlevel,
+                address_status, build_status,
+                CASE
+                    WHEN split_part(floorlevel, ',', 1) ~ '^-?[0-9]+$'
+                        THEN CAST(split_part(floorlevel, ',', 1) AS INTEGER)
+                    ELSE NULL
+                END AS level_int
+            FROM all_full_addresses_enriched
+            WHERE floorlevel IS NOT NULL
+              AND address_concat IS NOT NULL
+              AND address_concat <> ''
+        ),
+        level_words AS (
+            SELECT
+                *,
+                CASE level_int
+                    WHEN -1 THEN 'BASEMENT'
+                    WHEN 0 THEN 'GROUND'
+                    WHEN 1 THEN 'FIRST'
+                    WHEN 2 THEN 'SECOND'
+                    WHEN 3 THEN 'THIRD'
+                    WHEN 4 THEN 'FOURTH'
+                    WHEN 5 THEN 'FIFTH'
+                    WHEN 6 THEN 'SIXTH'
+                END AS level_word
+            FROM level_parsed
+            WHERE level_int BETWEEN -1 AND 6
+        )
+        SELECT
+            uprn,
+            TRIM(concat(level_word, ' ', address_concat)) AS address_concat,
+            postcode,
+            'CUSTOM_LEVEL' AS filename,
+            classificationcode,
+            parentuprn,
+            rootuprn,
+            hierarchylevel,
+            floorlevel,
+            lowestfloorlevel,
+            highestfloorlevel,
+            'Custom Level' AS feature_type,
+            address_status,
+            build_status
+        FROM level_words
+        WHERE level_word IS NOT NULL;
+    """
+    con.execute(sql)
+
+
 def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
     """Create deduplicated view of all addresses.
 
     Priority rules for deduplication:
-    - Feature type: Built Address -> Pre-Build -> Royal Mail -> Historic -> Non-Addressable
+    - Feature type: Built Address -> Pre-Build -> Royal Mail -> Historic -> Non-Addressable -> Custom Level
     - Address status: Approved -> Provisional -> Alternative -> Historical
     - Build status: Built Complete -> Under Construction -> Prebuild -> Historic -> Demolished
 
@@ -435,6 +500,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
               WHEN 'Royal Mail Address' THEN 3
               WHEN 'Historic Address' THEN 4
               WHEN 'Non-Addressable Object' THEN 5
+              WHEN 'Custom Level' THEN 6
               ELSE 9
             END AS feature_type_rank,
             CASE
@@ -460,7 +526,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
                 build_status_rank
             ) AS rn
           FROM all_full_addresses_enriched
-          WHERE feature_type != 'Non-Addressable Object'
+          WHERE feature_type NOT IN ('Non-Addressable Object')
         )
         SELECT
           uprn,
@@ -640,6 +706,10 @@ def run_flatfile_step(settings: Settings, force: bool = False) -> list[Path]:
         # Enrich with metadata from lookup table
         logger.info("Enriching addresses with metadata from core files...")
         _enrich_with_metadata(con)
+
+        # Generate custom level variants
+        logger.info("Generating custom level address variants...")
+        _create_custom_level_rows(con)
 
         # Create deduplicated view
         logger.info("Creating deduplicated view...")
