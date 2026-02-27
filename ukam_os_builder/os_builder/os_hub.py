@@ -9,6 +9,8 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
+from ukam_os_builder.api.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = "https://api.os.uk/downloads/v1"
@@ -312,3 +314,54 @@ def run_download_step(
 
     logger.info("Download complete: %d file(s)", len(downloaded))
     return downloaded
+
+
+def _get_manifest_path(settings: Settings) -> Path | None:
+    downloads_dir = settings.paths.downloads_dir.resolve()
+    source_type = settings.source.type  # "abp" | "ngd"
+
+    if source_type == "abp":
+        candidates = list(downloads_dir.glob("*-Order_Details.txt"))
+        if not candidates:
+            logger.info("➡️ Manifest (ABP order details) not found. Check: %s", downloads_dir)
+            return None
+
+        manifest = max(candidates, key=lambda p: p.stat().st_mtime).resolve()
+
+        if len(candidates) > 1:
+            logger.warning(
+                "Multiple ABP manifests found in %s. Using newest: %s",
+                downloads_dir,
+                manifest,
+            )
+
+        logger.info("➡️ Manifest (ABP order details): %s", manifest)
+        return manifest
+
+    elif source_type == "ngd":
+        candidates = list(
+            downloads_dir.glob("*_orderSummary.json")
+        )  # adjust if it's "*.orderSummary.json"
+        if not candidates:
+            logger.info("➡️ Manifests (NGD order summaries) not found. Check: %s", downloads_dir)
+            return None
+
+        built_candidates = list(downloads_dir.glob("*builtaddress*_orderSummary.json"))
+        built_manifest = (
+            max(built_candidates, key=lambda p: p.stat().st_mtime).resolve()
+            if built_candidates
+            else None
+        )
+
+        logger.info(
+            "➡️ Manifests (NGD order summaries): %s (%d files)\n"
+            "    ↳ Built address order summary: %s",
+            downloads_dir,
+            len(candidates),
+            built_manifest if built_manifest else "(not found)",
+        )
+
+        return downloads_dir
+
+    logger.warning("Unknown source type %r. No manifest lookup performed.", source_type)
+    return None
