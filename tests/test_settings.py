@@ -122,7 +122,9 @@ def test_load_settings_uses_work_dir_for_default_subpaths(
     assert settings.paths.output_dir == (tmp_path / "custom_data/output").resolve()
 
 
-def test_load_settings_requires_env_vars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_settings_allows_missing_env_vars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.delenv("OS_PROJECT_API_KEY", raising=False)
     monkeypatch.delenv("OS_PROJECT_API_SECRET", raising=False)
 
@@ -139,8 +141,10 @@ def test_load_settings_requires_env_vars(tmp_path: Path, monkeypatch: pytest.Mon
         """,
     )
 
-    with pytest.raises(SettingsError, match="OS_PROJECT_API_KEY"):
-        load_settings(config_path, load_env=False)
+    settings = load_settings(config_path, load_env=False)
+
+    assert settings.os_downloads.api_key is None
+    assert settings.os_downloads.api_secret is None
 
 
 def test_load_settings_validates_positive_read_timeout(

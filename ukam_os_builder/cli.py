@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         config_path = Path(args.config).resolve()
         console.print(f"[green]✓[/green] Loaded config: [bold]{config_path}[/bold]")
         console.print(f"[cyan]Step:[/cyan] {args.step}")
-        console.print("[cyan]Checking OS API credentials and connectivity...[/cyan]")
+        console.print("[cyan]Starting pipeline...[/cyan]")
 
         run_from_config(
             config_path=config_path,
@@ -146,7 +146,6 @@ def main(argv: list[str] | None = None) -> int:
             parquet_compression_level=args.parquet_compression_level,
         )
         logger.info("Pipeline run completed")
-        console.print("[green]✓[/green] API connectivity check passed")
         console.print("[bold green]Build completed successfully[/bold green]")
         return 0
     except (SettingsError, ValueError) as exc:

@@ -41,8 +41,8 @@ class OSDownloadSettings(StrictBaseModel):
 
     package_id: str
     version_id: str
-    api_key: SecretStr
-    api_secret: SecretStr
+    api_key: SecretStr | None = None
+    api_secret: SecretStr | None = None
     connect_timeout_seconds: int = 30
     read_timeout_seconds: int = 300
 
@@ -57,6 +57,8 @@ class OSDownloadSettings(StrictBaseModel):
     @field_validator("api_key", "api_secret", mode="before")
     @classmethod
     def _validate_secret(cls, value: Any) -> Any:
+        if value is None:
+            return value
         if isinstance(value, str) and not value.strip():
             raise ValueError("must be non-empty")
         return value
@@ -182,21 +184,10 @@ def _load_yaml(config_path: Path) -> dict[str, Any]:
     return config
 
 
-def _validate_env_vars() -> tuple[str, str]:
-    """Validate required environment variables exist."""
+def _load_env_vars() -> tuple[str | None, str | None]:
+    """Load API credentials from environment variables if available."""
     api_key = os.environ.get("OS_PROJECT_API_KEY")
     api_secret = os.environ.get("OS_PROJECT_API_SECRET")
-
-    if not api_key:
-        raise SettingsError(
-            "OS_PROJECT_API_KEY not found in environment. "
-            "Create a .env file with OS_PROJECT_API_KEY=<your-key>"
-        )
-    if not api_secret:
-        raise SettingsError(
-            "OS_PROJECT_API_SECRET not found in environment. "
-            "Create a .env file with OS_PROJECT_API_SECRET=<your-secret>"
-        )
 
     return api_key, api_secret
 
@@ -216,8 +207,7 @@ def load_settings(
         Complete Settings object with resolved paths.
 
     Raises:
-        SettingsError: If config file is missing or invalid,
-                       or if required environment variables are not set.
+        SettingsError: If config file is missing or invalid.
     """
     config_path = Path(config_path).resolve()
     base_dir = config_path.parent
@@ -232,8 +222,8 @@ def load_settings(
     # Load YAML config
     config = _load_yaml(config_path)
 
-    # Validate environment variables
-    api_key, api_secret = _validate_env_vars()
+    # Load environment variables (optional)
+    api_key, api_secret = _load_env_vars()
 
     resolved_paths = resolve_paths(config=config, config_dir=base_dir)
 

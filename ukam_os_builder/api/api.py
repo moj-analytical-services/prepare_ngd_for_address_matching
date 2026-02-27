@@ -347,7 +347,8 @@ def run_from_config(
                 f"--step {step} is not valid for source {source_type}. Valid steps: {valid_steps}"
             )
 
-    if check_api:
+    has_api_key = bool(os.environ.get("OS_PROJECT_API_KEY"))
+    if check_api and has_api_key:
         get_package_version(settings)
 
     overwrite_effective = overwrite if overwrite is not None else bool(force)

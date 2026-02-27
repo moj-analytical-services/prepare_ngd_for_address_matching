@@ -65,6 +65,13 @@ def _require_api_key(settings: Any) -> str:
     return api_key
 
 
+def _find_existing_download_archives(downloads_dir: Path) -> list[Path]:
+    """Find existing local archives that can be used for extract step."""
+    if not downloads_dir.exists():
+        return []
+    return sorted(downloads_dir.glob("*.zip"))
+
+
 def get_package_version(settings: Any) -> dict:
     """Fetch package version metadata from the OS Data Hub API."""
     package_id = settings.os_downloads.package_id
@@ -236,8 +243,26 @@ def run_download_step(
     list_only: bool = False,
 ) -> list[Path]:
     """Run the OS Data Hub download step for any compatible settings object."""
-    api_key = _require_api_key(settings)
     downloads_dir = settings.paths.downloads_dir
+
+    try:
+        api_key = _require_api_key(settings)
+    except ValueError as exc:
+        if list_only:
+            raise
+
+        existing_archives = _find_existing_download_archives(downloads_dir)
+        if existing_archives:
+            logger.warning(
+                "No API key found; using %d existing archive(s) in %s and skipping download.",
+                len(existing_archives),
+                downloads_dir,
+            )
+            return existing_archives
+
+        raise ValueError(
+            f"{exc} No local zip files were found in {downloads_dir}, so download cannot be skipped."
+        ) from exc
 
     logger.info("Fetching package metadata...")
     metadata = get_package_version(settings)
