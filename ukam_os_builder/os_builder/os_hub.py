@@ -14,6 +14,20 @@ from ukam_os_builder.api.settings import Settings
 logger = logging.getLogger(__name__)
 
 API_BASE_URL = "https://api.os.uk/downloads/v1"
+
+# NGD file stems to exclude (historic addresses are not used in output)
+_NGD_EXCLUDED_STEMS = {"historicaddress"}
+
+
+def _should_skip_ngd_download(filename: str, settings: object) -> bool:
+    """Return True if *filename* is an NGD historic-address archive."""
+    source_type = getattr(getattr(settings, "source", None), "type", "")
+    if source_type != "ngd":
+        return False
+    name_lower = filename.lower()
+    return any(stem in name_lower for stem in _NGD_EXCLUDED_STEMS)
+
+
 DEFAULT_CHUNK_SIZE = 1024 * 1024 * 20  # 20 MiB
 DEFAULT_CONNECT_TIMEOUT_SECONDS = 30
 DEFAULT_READ_TIMEOUT_SECONDS = 300
@@ -293,6 +307,11 @@ def run_download_step(
         for item in items:
             if not item.url:
                 logger.warning("No URL for %s, skipping", item.filename)
+                continue
+
+            # Skip NGD historic address files — they are excluded from output
+            if _should_skip_ngd_download(item.filename, settings):
+                logger.info("Skipping historic address file: %s", item.filename)
                 continue
 
             dest_path = downloads_dir / item.filename

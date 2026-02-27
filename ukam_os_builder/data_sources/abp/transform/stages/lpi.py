@@ -70,15 +70,15 @@ matching messy user input. We output variants based on **Logical Status**:
     locally known as "Rose Cottage").
 3.  **Provisional (6):** The address assigned during planning/construction, which
     might change before the house is built.
-4.  **Historic (8):** An old address. If "10 High St" is renumbered to "12 High St",
-    the old address is kept as Historic. This helps match old datasets.
+
+Historic addresses (logical_status=8) are excluded from output.
 
 ------------------------------------------------------------------------------
 Key Columns Explained
 ------------------------------------------------------------------------------
 *   `uprn`: The "Golden Key". Use this to link this address to other data.
 *   `base_address`: The constructed full address string.
-*   `logical_status`: 1=Current, 6=Provisional, 8=Historic.
+*   `logical_status`: 1=Current, 6=Provisional.
 *   `official_flag`: 'Y' indicates this is the "official" version, 'N' suggests
     it might be an unofficial alias.
 *   `language`: 'ENG' (English) or 'CYM' (Welsh). Streets in Wales often have
@@ -183,7 +183,6 @@ def prepare_lpi_base(con: duckdb.DuckDBPyConnection) -> None:
                 WHEN 1 THEN 0
                 WHEN 3 THEN 1
                 WHEN 6 THEN 2
-                WHEN 8 THEN 3
                 ELSE 9
             END AS status_rank
         FROM lpi l
@@ -192,7 +191,7 @@ def prepare_lpi_base(con: duckdb.DuckDBPyConnection) -> None:
         LEFT JOIN _sd_best_by_lang sd_lang ON sd_lang.usrn = l.usrn AND sd_lang.language = l.language
         LEFT JOIN _sd_best_any sd_any ON sd_any.usrn = l.usrn
         WHERE (b.addressbase_postal != 'N' OR b.addressbase_postal IS NULL)
-          AND l.logical_status IN (1, 3, 6, 8)
+          AND l.logical_status IN (1, 3, 6)
     """)
 
     # Deduplicated distinct addresses
@@ -266,7 +265,6 @@ def render_variants(con: duckdb.DuckDBPyConnection) -> None:
                 WHEN 1 THEN 'APPROVED'
                 WHEN 3 THEN 'ALTERNATIVE'
                 WHEN 6 THEN 'PROVISIONAL'
-                WHEN 8 THEN 'HISTORICAL'
             END AS variant_label,
             (logical_status = 1) AS is_primary
         FROM lpi_base_distinct

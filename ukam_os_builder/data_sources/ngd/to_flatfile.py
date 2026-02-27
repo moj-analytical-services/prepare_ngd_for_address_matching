@@ -2,7 +2,7 @@
 
 Transforms the extracted parquet files into a single flatfile suitable for
 UK address matching. This includes:
-- Processing core feature types (Built Address, Historic Address, etc.)
+- Processing core feature types (Built Address, Pre-Build Address, etc.)
 - Processing alternate address records
 - Processing Royal Mail addresses
 - Handling Welsh language variants
@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 FEATURE_TYPE_BY_STEM = {
     "add_gb_builtaddress": "Built Address",
     "add_gb_builtaddress_altadd": "Built Address",
-    "add_gb_historicaddress": "Historic Address",
-    "add_gb_historicaddress_altadd": "Historic Address",
     "add_gb_nonaddressableobject": "Non-Addressable Object",
     "add_gb_nonaddressableobject_altadd": "Non-Addressable Object",
     "add_gb_prebuildaddress": "Pre-Build Address",
@@ -39,7 +37,6 @@ FEATURE_TYPE_BY_STEM = {
 # Core feature stems (contain fulladdress and classification fields)
 CORE_FEATURE_STEMS = {
     "add_gb_builtaddress",
-    "add_gb_historicaddress",
     "add_gb_nonaddressableobject",
     "add_gb_prebuildaddress",
 }
@@ -47,7 +44,6 @@ CORE_FEATURE_STEMS = {
 # Alternate address stems (no classification fields)
 ALTADD_STEMS = {
     "add_gb_builtaddress_altadd",
-    "add_gb_historicaddress_altadd",
     "add_gb_nonaddressableobject_altadd",
     "add_gb_prebuildaddress_altadd",
 }
@@ -57,7 +53,6 @@ CORE_FEATURE_PRIORITY = {
     "add_gb_builtaddress": 1,
     "add_gb_prebuildaddress": 2,
     "add_gb_nonaddressableobject": 3,
-    "add_gb_historicaddress": 4,
 }
 
 
@@ -71,7 +66,7 @@ def _create_metadata_lookup_view(
     This view is used to enrich Royal Mail and alternate address records
     with metadata (classificationcode, parentuprn, etc.) by UPRN lookup.
 
-    Uses priority ranking (Built > Pre-Build > Non-Addressable > Historic)
+    Uses priority ranking (Built > Pre-Build > Non-Addressable)
     to dedupe when a UPRN exists in multiple core files.
 
     Args:
@@ -156,7 +151,7 @@ def _create_core_feature_view(
     parquet_path: Path,
     uprn_predicate: str | None = None,
 ) -> None:
-    """Create view for core feature types (Built, Historic, Pre-Build, Non-Addressable).
+    """Create view for core feature types (Built, Pre-Build, Non-Addressable).
 
     These tables have fulladdress, classification fields, and Welsh language columns.
     Produces both English and Welsh (where available) address records.
@@ -482,7 +477,7 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
     """Create deduplicated view of all addresses.
 
     Priority rules for deduplication:
-    - Feature type: Built Address -> Pre-Build -> Royal Mail -> Historic -> Non-Addressable -> Custom Level
+    - Feature type: Built Address -> Pre-Build -> Royal Mail -> Non-Addressable
     - Address status: Approved -> Provisional -> Alternative -> Historical
     - Build status: Built Complete -> Under Construction -> Prebuild -> Historic -> Demolished
 
@@ -498,7 +493,6 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
               WHEN 'Built Address' THEN 1
               WHEN 'Pre-Build Address' THEN 2
               WHEN 'Royal Mail Address' THEN 3
-              WHEN 'Historic Address' THEN 4
               WHEN 'Non-Addressable Object' THEN 5
               WHEN 'Custom Level' THEN 6
               ELSE 9

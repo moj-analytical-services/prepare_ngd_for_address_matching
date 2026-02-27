@@ -33,7 +33,7 @@ def combine_and_dedupe(con: duckdb.DuckDBPyConnection) -> duckdb.DuckDBPyRelatio
         ),
         ranked AS (
             SELECT *,
-                CASE logical_status WHEN 1 THEN 0 WHEN 3 THEN 1 WHEN 6 THEN 2 WHEN 8 THEN 3 ELSE 9 END AS status_rank,
+                CASE logical_status WHEN 1 THEN 0 WHEN 3 THEN 1 WHEN 6 THEN 2 ELSE 9 END AS status_rank,
                 CASE source WHEN 'LPI' THEN 0 WHEN 'ORGANISATION' THEN 1 WHEN 'DELIVERY_POINT' THEN 2 WHEN 'CUSTOM_LEVEL' THEN 3 ELSE 4 END AS source_rank
             FROM normalized
         ),

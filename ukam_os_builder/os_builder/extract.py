@@ -11,6 +11,9 @@ from ukam_os_builder.api.settings import Settings
 
 logger = logging.getLogger(__name__)
 
+# NGD file stems to exclude (historic addresses are not used in output)
+_NGD_EXCLUDED_STEMS = {"historicaddress"}
+
 
 def find_downloaded_zips(downloads_dir: Path) -> list[Path]:
     """Find all downloaded zip files in a directory."""
@@ -22,11 +25,20 @@ def find_downloaded_zips(downloads_dir: Path) -> list[Path]:
     return zip_files
 
 
+def _is_excluded_ngd_file(name: str) -> bool:
+    """Return True if *name* matches an excluded NGD stem (e.g. historicaddress)."""
+    name_lower = name.lower()
+    return any(stem in name_lower for stem in _NGD_EXCLUDED_STEMS)
+
+
 def _filter_zips_for_source(zip_files: list[Path], source: str) -> list[Path]:
     source_lower = source.lower()
     if source_lower == "ngd":
         ngd_zips = [
-            zip_path for zip_path in zip_files if zip_path.name.lower().startswith("add_gb_")
+            zip_path
+            for zip_path in zip_files
+            if zip_path.name.lower().startswith("add_gb_")
+            and not _is_excluded_ngd_file(zip_path.name)
         ]
         return ngd_zips or zip_files
     if source_lower == "abp":
@@ -39,7 +51,8 @@ def _filter_zips_for_source(zip_files: list[Path], source: str) -> list[Path]:
 
 def _should_convert_csv_to_parquet(csv_path: Path, source: str) -> bool:
     if source.lower() == "ngd":
-        return csv_path.name.lower().startswith("add_gb_")
+        name_lower = csv_path.name.lower()
+        return name_lower.startswith("add_gb_") and not _is_excluded_ngd_file(name_lower)
     return True
 
 

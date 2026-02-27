@@ -121,7 +121,6 @@ def _prepare_test_parquet(settings: Settings) -> None:
         "add_gb_builtaddress_altadd.csv",
         "add_gb_royalmailaddress.csv",
         "add_gb_prebuildaddress.csv",
-        "add_gb_historicaddress.csv",
     ]
 
     for csv_name in sample_files:
