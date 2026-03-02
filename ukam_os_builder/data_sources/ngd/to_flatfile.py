@@ -97,7 +97,6 @@ def _create_metadata_lookup_view(
             """)
 
     if not union_parts:
-        # No core files found - create empty lookup
         logger.warning("No core feature files found. Metadata lookup will be empty.")
         con.execute("""
             CREATE OR REPLACE TEMP VIEW uprn_metadata_lookup AS
@@ -112,37 +111,48 @@ def _create_metadata_lookup_view(
                 CAST(NULL AS DOUBLE) AS highestfloorlevel
             WHERE 1=0
         """)
-        return
+    else:
+        union_sql = "\nUNION ALL\n".join(union_parts)
 
-    union_sql = "\nUNION ALL\n".join(union_parts)
-
-    sql = f"""
-        CREATE OR REPLACE TEMP VIEW uprn_metadata_lookup AS
-        WITH core_data AS (
-            {union_sql}
-        ),
-        ranked AS (
+        sql = f"""
+            CREATE OR REPLACE TEMP VIEW uprn_metadata_lookup AS
+            WITH core_data AS (
+                {union_sql}
+            ),
+            ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY uprn
+                        ORDER BY source_priority
+                    ) AS rn
+                FROM core_data
+            )
             SELECT
-                *,
-                ROW_NUMBER() OVER (
-                    PARTITION BY uprn
-                    ORDER BY source_priority
-                ) AS rn
-            FROM core_data
-        )
+                uprn,
+                classificationcode,
+                parentuprn,
+                rootuprn,
+                hierarchylevel,
+                floorlevel,
+                lowestfloorlevel,
+                highestfloorlevel
+            FROM ranked
+            WHERE rn = 1;
+        """
+        con.execute(sql)
+
+    built_path = parquet_dir / "add_gb_builtaddress.parquet"
+    built_sql = f"""
+        CREATE OR REPLACE TEMP VIEW builtaddress_ltla_lookup AS
         SELECT
-            uprn,
-            classificationcode,
-            parentuprn,
-            rootuprn,
-            hierarchylevel,
-            floorlevel,
-            lowestfloorlevel,
-            highestfloorlevel
-        FROM ranked
-        WHERE rn = 1;
+            CAST(uprn AS BIGINT) AS uprn,
+            MAX(CAST(lowertierlocalauthoritygsscode AS VARCHAR)) AS lowertierlocalauthoritygsscode
+        FROM read_parquet('{built_path.as_posix()}')
+        {where_clause}
+        GROUP BY CAST(uprn AS BIGINT)
     """
-    con.execute(sql)
+    con.execute(built_sql)
 
 
 def _create_core_feature_view(
@@ -183,6 +193,7 @@ def _create_core_feature_view(
             CAST(floorlevel AS VARCHAR) AS floorlevel,
             CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
             CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            CAST(NULL AS VARCHAR) AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication (not in final output)
             CAST(description AS VARCHAR) AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
@@ -222,6 +233,7 @@ def _create_core_feature_view(
             CAST(floorlevel AS VARCHAR) AS floorlevel,
             CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
             CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            CAST(NULL AS VARCHAR) AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication (not in final output)
             CAST(description AS VARCHAR) AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
@@ -277,6 +289,7 @@ def _create_altadd_view(
             CAST(floorlevel AS VARCHAR) AS floorlevel,
             CAST(lowestfloorlevel AS DOUBLE) AS lowestfloorlevel,
             CAST(highestfloorlevel AS DOUBLE) AS highestfloorlevel,
+            CAST(NULL AS VARCHAR) AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication (not in final output)
             '{feature_type}' AS feature_type,
             CAST(addressstatus AS VARCHAR) AS address_status,
@@ -333,6 +346,7 @@ def _create_royal_mail_view(
             CAST(NULL AS VARCHAR) AS floorlevel,
             CAST(NULL AS DOUBLE) AS lowestfloorlevel,
             CAST(NULL AS DOUBLE) AS highestfloorlevel,
+            CAST(NULL AS VARCHAR) AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication (not in final output)
             'Royal Mail Address' AS feature_type,
             CAST(NULL AS VARCHAR) AS address_status,
@@ -363,6 +377,7 @@ def _create_royal_mail_view(
             CAST(NULL AS VARCHAR) AS floorlevel,
             CAST(NULL AS DOUBLE) AS lowestfloorlevel,
             CAST(NULL AS DOUBLE) AS highestfloorlevel,
+            CAST(NULL AS VARCHAR) AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication (not in final output)
             'Royal Mail Address' AS feature_type,
             CAST(NULL AS VARCHAR) AS address_status,
@@ -398,12 +413,14 @@ def _enrich_with_metadata(con: duckdb.DuckDBPyConnection) -> None:
             COALESCE(a.floorlevel, m.floorlevel) AS floorlevel,
             COALESCE(a.lowestfloorlevel, m.lowestfloorlevel) AS lowestfloorlevel,
             COALESCE(a.highestfloorlevel, m.highestfloorlevel) AS highestfloorlevel,
+            b.lowertierlocalauthoritygsscode AS lowertierlocalauthoritygsscode,
             -- Internal columns for deduplication
             a.feature_type,
             a.address_status,
             a.build_status
         FROM all_full_addresses a
-        LEFT JOIN uprn_metadata_lookup m ON a.uprn = m.uprn;
+        LEFT JOIN uprn_metadata_lookup m ON a.uprn = m.uprn
+        LEFT JOIN builtaddress_ltla_lookup b ON a.uprn = b.uprn;
     """
     con.execute(sql)
 
@@ -419,11 +436,28 @@ def _create_custom_level_rows(con: duckdb.DuckDBPyConnection) -> None:
     dedup priority and never override official address data.
     """
     sql = """
-        INSERT INTO all_full_addresses_enriched
+        INSERT INTO all_full_addresses_enriched (
+            uprn,
+            address_concat,
+            postcode,
+            filename,
+            classificationcode,
+            parentuprn,
+            rootuprn,
+            hierarchylevel,
+            floorlevel,
+            lowestfloorlevel,
+            highestfloorlevel,
+            lowertierlocalauthoritygsscode,
+            feature_type,
+            address_status,
+            build_status
+        )
         WITH level_parsed AS (
             SELECT
                 uprn, address_concat, postcode, filename,
                 classificationcode, parentuprn, rootuprn,
+                lowertierlocalauthoritygsscode,
                 hierarchylevel, floorlevel, lowestfloorlevel, highestfloorlevel,
                 address_status, build_status,
                 CASE
@@ -464,6 +498,7 @@ def _create_custom_level_rows(con: duckdb.DuckDBPyConnection) -> None:
             floorlevel,
             lowestfloorlevel,
             highestfloorlevel,
+            lowertierlocalauthoritygsscode,
             'Custom Level' AS feature_type,
             address_status,
             build_status
@@ -529,11 +564,8 @@ def _create_dedup_view(con: duckdb.DuckDBPyConnection) -> None:
           filename,
           classificationcode,
           parentuprn,
-          rootuprn,
-          hierarchylevel,
-          floorlevel,
-          lowestfloorlevel,
-          highestfloorlevel
+          lowertierlocalauthoritygsscode,
+                    floorlevel
         FROM ranked
         WHERE rn = 1;
     """

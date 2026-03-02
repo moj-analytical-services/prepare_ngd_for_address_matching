@@ -178,11 +178,8 @@ def test_flatfile_single_chunk(temp_settings: Settings) -> None:
         "filename",
         "classificationcode",
         "parentuprn",
-        "rootuprn",
-        "hierarchylevel",
+        "lowertierlocalauthoritygsscode",
         "floorlevel",
-        "lowestfloorlevel",
-        "highestfloorlevel",
     ]
     for col in expected_columns:
         assert col in column_names, f"Column {col} should exist in output"

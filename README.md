@@ -195,13 +195,10 @@ Each file contains:
 | `filename` | VARCHAR | Source file name (for example `add_gb_builtaddress.parquet`) |
 | `classificationcode` | VARCHAR | Property classification code (for example RD06 for residential) |
 | `parentuprn` | BIGINT | Parent UPRN for hierarchical addresses |
-| `rootuprn` | BIGINT | Root UPRN at the top of the hierarchy |
-| `hierarchylevel` | INTEGER | Level in the address hierarchy (1 = root) |
+| `lowertierlocalauthoritygsscode` | VARCHAR | Lower-tier local authority GSS code |
 | `floorlevel` | VARCHAR | Floor level identifier |
-| `lowestfloorlevel` | DOUBLE | Lowest floor number |
-| `highestfloorlevel` | DOUBLE | Highest floor number |
 
-Metadata columns (`classificationcode`, `parentuprn`, `rootuprn`, `hierarchylevel`, `floorlevel`, `lowestfloorlevel`, `highestfloorlevel`) are enriched via UPRN lookup from core address files. This means Royal Mail addresses and alternate address records receive metadata from their corresponding Built, Historic, or Pre-Build records.
+Metadata used in output (`classificationcode`, `parentuprn`, `lowertierlocalauthoritygsscode`, `floorlevel`) is enriched via UPRN lookup from core address files. This means Royal Mail addresses and alternate address records receive metadata from their corresponding Built, Historic, or Pre-Build records. `lowertierlocalauthoritygsscode` is always sourced from Built Address via UPRN lookup.
 
 </details>
 
