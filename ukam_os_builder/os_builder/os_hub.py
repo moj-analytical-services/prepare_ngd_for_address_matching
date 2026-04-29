@@ -253,6 +253,29 @@ def download_file(
     return True
 
 
+def _use_existing_archives_or_raise(
+    downloads_dir: Path,
+    reason: str,
+    original_exc: Exception,
+) -> list[Path]:
+    """Fall back to existing local archives, or re-raise with a helpful message."""
+    existing_archives = _find_existing_download_archives(downloads_dir)
+    if existing_archives:
+        logger.warning(
+            "%s; using %d existing archive(s) in %s and skipping download "
+            "(MD5 verification against the OS Data Hub will be skipped).",
+            reason,
+            len(existing_archives),
+            downloads_dir,
+        )
+        return existing_archives
+
+    raise ValueError(
+        f"{reason}. No local zip files were found in {downloads_dir}, "
+        "so download cannot be skipped."
+    ) from original_exc
+
+
 def run_download_step(
     settings: Any,
     force: bool = False,
@@ -266,22 +289,23 @@ def run_download_step(
     except ValueError as exc:
         if list_only:
             raise
-
-        existing_archives = _find_existing_download_archives(downloads_dir)
-        if existing_archives:
-            logger.warning(
-                "No API key found; using %d existing archive(s) in %s and skipping download.",
-                len(existing_archives),
-                downloads_dir,
-            )
-            return existing_archives
-
-        raise ValueError(
-            f"{exc} No local zip files were found in {downloads_dir}, so download cannot be skipped."
-        ) from exc
+        return _use_existing_archives_or_raise(
+            downloads_dir,
+            reason="No API key found",
+            original_exc=exc,
+        )
 
     logger.info("Fetching package metadata...")
-    metadata = get_package_version(settings)
+    try:
+        metadata = get_package_version(settings)
+    except (requests.exceptions.RequestException, OSError) as exc:
+        if list_only:
+            raise
+        return _use_existing_archives_or_raise(
+            downloads_dir,
+            reason=f"Could not reach OS Data Hub ({exc.__class__.__name__})",
+            original_exc=exc,
+        )
     items = list_downloads(metadata)
 
     if list_only:

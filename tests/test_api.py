@@ -6,6 +6,7 @@ from textwrap import dedent
 from typing import Literal
 
 import pytest
+import requests
 
 from ukam_os_builder.api.api import create_config_and_env, run_from_config
 
@@ -295,3 +296,74 @@ def test_run_from_config_applies_schema_path_override(
 
     assert calls["step"] == "split"
     assert calls["schema_path"] == custom_schema.resolve()
+
+
+def test_run_from_config_continues_when_api_preflight_is_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("OS_PROJECT_API_KEY", "key")
+    monkeypatch.setenv("OS_PROJECT_API_SECRET", "secret")
+
+    config_path = tmp_path / "config.yaml"
+    _write_config(
+        config_path,
+        """
+        source:
+          type: ngd
+
+        os_downloads:
+          package_id: "16465"
+          version_id: "104444"
+        """,
+    )
+
+    calls: dict[str, object] = {}
+
+    def fake_check_api(_settings: object) -> None:
+        raise requests.exceptions.ConnectionError("offline")
+
+    def fake_run_pipeline(step: str, settings: object, force: bool, list_only: bool) -> None:
+        calls["step"] = step
+        calls["list_only"] = list_only
+
+    monkeypatch.setattr("ukam_os_builder.api.api.get_package_version", fake_check_api)
+    monkeypatch.setattr("ukam_os_builder.api.api.run_pipeline", fake_run_pipeline)
+
+    with caplog.at_level("WARNING"):
+        run_from_config(config_path=config_path, step="all")
+
+    assert calls["step"] == "all"
+    assert calls["list_only"] is False
+    assert "Could not reach OS Data Hub during API preflight" in caplog.text
+
+
+def test_run_from_config_raises_when_list_only_api_preflight_is_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("OS_PROJECT_API_KEY", "key")
+    monkeypatch.setenv("OS_PROJECT_API_SECRET", "secret")
+
+    config_path = tmp_path / "config.yaml"
+    _write_config(
+        config_path,
+        """
+        source:
+          type: ngd
+
+        os_downloads:
+          package_id: "16465"
+          version_id: "104444"
+        """,
+    )
+
+    def fake_check_api(_settings: object) -> None:
+        raise requests.exceptions.ConnectionError("offline")
+
+    monkeypatch.setattr("ukam_os_builder.api.api.get_package_version", fake_check_api)
+    monkeypatch.setattr("ukam_os_builder.api.api.run_pipeline", lambda **_kwargs: None)
+
+    with pytest.raises(requests.exceptions.ConnectionError, match="offline"):
+        run_from_config(config_path=config_path, step="download", list_only=True)

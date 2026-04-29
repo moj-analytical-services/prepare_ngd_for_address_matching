@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+import requests
 import yaml
 
 from ukam_os_builder.api.settings import Settings, SettingsError, load_settings
@@ -344,7 +345,16 @@ def run_from_config(
 
     has_api_key = bool(os.environ.get("OS_PROJECT_API_KEY"))
     if check_api and has_api_key:
-        get_package_version(settings)
+        try:
+            get_package_version(settings)
+        except requests.exceptions.RequestException as exc:
+            if list_only:
+                raise
+            logger.warning(
+                "Could not reach OS Data Hub during API preflight (%s). "
+                "Continuing so local downloads can be used if available.",
+                exc.__class__.__name__,
+            )
 
     overwrite_effective = overwrite if overwrite is not None else bool(force)
     run_pipeline(step=step, settings=settings, force=overwrite_effective, list_only=list_only)

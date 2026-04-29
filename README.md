@@ -6,10 +6,13 @@ Build OS address data for `uk_address_matcher` from either NGD (National Geograp
 
 - Python `3.10+`
 - OS Data Hub package and version IDs
-- Network access to OS Downloads API
+- Network access to OS Downloads API for downloads or remote listing
+- Existing downloaded archives if you want to run offline without re-downloading
 - Credentials in `.env`:
   - `OS_PROJECT_API_KEY`
   - `OS_PROJECT_API_SECRET`
+
+If the required zip files already exist in your downloads directory, the build can now continue offline without contacting OS Data Hub. `--list-only` still requires network access because it queries remote package metadata.
 
 ## Install from PyPI
 
