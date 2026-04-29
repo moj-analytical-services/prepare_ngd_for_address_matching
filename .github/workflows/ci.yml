@@ -3,9 +3,9 @@ name: Build & package
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
-      - "src/**"
+      - "ukam_os_builder/**"
       - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
